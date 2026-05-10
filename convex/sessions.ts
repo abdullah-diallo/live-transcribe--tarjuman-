@@ -1,0 +1,232 @@
+import { mutation, query, type QueryCtx } from "./_generated/server";
+import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
+import { auth } from "./auth";
+
+/**
+ * Sessions CRUD with ownership checks.
+ *
+ * Every function calls `auth.getUserId(ctx)`:
+ *  - Mutations: throw if unauthenticated (the user has no business writing).
+ *  - Queries: return [] / null if unauthenticated (gentler — the page may
+ *    render before the auth handshake completes).
+ * Every read of an existing session validates that `session.userId === userId`
+ * before returning it. Sessions from Phase B (no userId) are never visible
+ * once auth is on.
+ */
+
+const segmentValidator = v.object({
+  id: v.string(),
+  sourceText: v.string(),
+  translatedText: v.string(),
+  timestamp: v.number(),
+});
+
+async function requireUserId(ctx: QueryCtx): Promise<Id<"users">> {
+  const userId = await auth.getUserId(ctx);
+  if (!userId) throw new Error("Not authenticated");
+  return userId;
+}
+
+// ─── Mutations ─────────────────────────────────────────────────────────────
+
+export const createSession = mutation({
+  args: {
+    sourceLanguage: v.string(),
+    targetLanguage: v.string(),
+    title: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx);
+    const now = Date.now();
+    return await ctx.db.insert("sessions", {
+      userId,
+      sourceLanguage: args.sourceLanguage,
+      targetLanguage: args.targetLanguage,
+      title: args.title,
+      status: "recording",
+      segments: [],
+      duration: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+  },
+});
+
+export const addSegments = mutation({
+  args: {
+    sessionId: v.id("sessions"),
+    segments: v.array(segmentValidator),
+  },
+  handler: async (ctx, args) => {
+    if (args.segments.length === 0) return;
+    const userId = await requireUserId(ctx);
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) throw new Error("Session not found");
+    if (session.userId !== userId) throw new Error("Not your session");
+
+    const existing = new Set(session.segments.map((s) => s.id));
+    const newOnes = args.segments.filter((s) => !existing.has(s.id));
+    if (newOnes.length === 0) return;
+
+    await ctx.db.patch(args.sessionId, {
+      segments: [...session.segments, ...newOnes],
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+export const pauseSession = mutation({
+  args: { sessionId: v.id("sessions") },
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx);
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) throw new Error("Session not found");
+    if (session.userId !== userId) throw new Error("Not your session");
+    await ctx.db.patch(args.sessionId, {
+      status: "paused",
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+export const resumeSession = mutation({
+  args: { sessionId: v.id("sessions") },
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx);
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) throw new Error("Session not found");
+    if (session.userId !== userId) throw new Error("Not your session");
+    await ctx.db.patch(args.sessionId, {
+      status: "recording",
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+export const completeSession = mutation({
+  args: {
+    sessionId: v.id("sessions"),
+    duration: v.number(),
+    title: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx);
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) throw new Error("Session not found");
+    if (session.userId !== userId) throw new Error("Not your session");
+    await ctx.db.patch(args.sessionId, {
+      status: "completed",
+      duration: args.duration,
+      title:
+        args.title ??
+        session.title ??
+        deriveTitle(session.segments) ??
+        undefined,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+export const saveSummary = mutation({
+  args: {
+    sessionId: v.id("sessions"),
+    summary: v.string(),
+    summaryLanguage: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx);
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) throw new Error("Session not found");
+    if (session.userId !== userId) throw new Error("Not your session");
+    await ctx.db.patch(args.sessionId, {
+      summary: args.summary,
+      summaryLanguage: args.summaryLanguage,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+export const updateTitle = mutation({
+  args: {
+    sessionId: v.id("sessions"),
+    title: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx);
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) throw new Error("Session not found");
+    if (session.userId !== userId) throw new Error("Not your session");
+    await ctx.db.patch(args.sessionId, {
+      title: args.title,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+export const deleteSession = mutation({
+  args: { sessionId: v.id("sessions") },
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx);
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) return;
+    if (session.userId !== userId) throw new Error("Not your session");
+    await ctx.db.delete(args.sessionId);
+  },
+});
+
+// ─── Queries ───────────────────────────────────────────────────────────────
+
+export const getSession = query({
+  args: { sessionId: v.id("sessions") },
+  handler: async (ctx, args) => {
+    const userId = await auth.getUserId(ctx);
+    if (!userId) return null;
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) return null;
+    if (session.userId !== userId) return null;
+    return session;
+  },
+});
+
+export const getUserSessions = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await auth.getUserId(ctx);
+    if (!userId) return [];
+    return await ctx.db
+      .query("sessions")
+      .withIndex("by_user_date", (q) => q.eq("userId", userId))
+      .order("desc")
+      .collect();
+  },
+});
+
+export const getRecentSessions = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const userId = await auth.getUserId(ctx);
+    if (!userId) return [];
+    const limit = args.limit ?? 3;
+    return await ctx.db
+      .query("sessions")
+      .withIndex("by_user_date", (q) => q.eq("userId", userId))
+      .order("desc")
+      .take(limit);
+  },
+});
+
+// ─── Helpers ───────────────────────────────────────────────────────────────
+
+function deriveTitle(
+  segments: { sourceText: string; translatedText: string }[]
+): string | null {
+  const first = segments[0];
+  if (!first) return null;
+  const text = first.translatedText || first.sourceText;
+  if (!text) return null;
+  const firstSentence = text.split(/(?<=[.!?؟])\s/)[0] ?? text;
+  return firstSentence.length > 60
+    ? firstSentence.slice(0, 57).trim() + "…"
+    : firstSentence.trim();
+}

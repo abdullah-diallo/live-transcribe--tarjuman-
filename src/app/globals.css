@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #060B18;
+  --color-surface: #0E1525;
+  --color-surface-light: #151D30;
+  --color-border-faint: rgba(255, 255, 255, 0.06);
+  --color-border-light: rgba(255, 255, 255, 0.1);
+  --color-accent: #2ECC71;
+  --color-accent-dk: #22A85A;
+  --color-accent-soft: rgba(46, 204, 113, 0.1);
+  --color-red-main: #EF4444;
+  --color-red-soft: rgba(239, 68, 68, 0.1);
+  --color-amber-main: #F59E0B;
+  --color-amber-soft: rgba(245, 158, 11, 0.1);
+  --color-blue-main: #3B82F6;
+  --color-blue-soft: rgba(59, 130, 246, 0.1);
+  --color-text-1: #F0F4F8;
+  --color-text-2: #B0BEC5;
+  --color-text-3: #6B7D8D;
+  --color-text-4: #455A64;
+  --font-sans: var(--font-dm-sans);
+  --font-mono: var(--font-jetbrains-mono);
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-text-1);
+  font-family: var(--font-sans), -apple-system, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html {
+  height: 100%;
+}
+
+body {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* Prevent iOS Safari text-size adjustment */
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Hide scrollbars on transcript but keep scroll */
+.transcript-scroll::-webkit-scrollbar {
+  width: 2px;
+}
+.transcript-scroll::-webkit-scrollbar-thumb {
+  background: var(--color-border-light);
+  border-radius: 1px;
+}

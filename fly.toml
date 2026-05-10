@@ -1,0 +1,56 @@
+# Fly.io application configuration for LiveTranscribe.
+#
+# Region: `fra` (Frankfurt) — Fly doesn't currently have a data center in
+# the Gulf, so Frankfurt is the best balance for KSA users (latency to
+# Madinah ~30-50ms over well-served European backbones). Alternatives if
+# Frankfurt feels slow: `bom` (Mumbai, ~50-80ms), `otp` (Bucharest), or
+# multiple regions once you scale. Run `fly platform regions` for the
+# current list.
+#
+# Sizing: shared-cpu-1x with 512MB. The app's runtime memory footprint is
+# small (Next + custom server + ws library); 512MB leaves comfortable
+# headroom. Bump to 1024MB if you ever see OOM events in `fly logs`.
+#
+# auto_stop_machines: when no connections, the machine sleeps. First
+# request after sleep has ~2-3s cold start. For an MVP that's fine; if
+# you grow the user base, set min_machines_running = 1.
+
+app = "livetranscribe"
+primary_region = "fra"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  NODE_ENV = "production"
+  NEXT_TELEMETRY_DISABLED = "1"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  # WebSocket connections (the Deepgram proxy at /api/deepgram-ws) are
+  # long-lived. Fly's default concurrency limits are generous; we just
+  # need to make sure soft/hard concurrency thresholds don't bounce
+  # users mid-recording.
+  [http_service.concurrency]
+    type = "requests"
+    hard_limit = 250
+    soft_limit = 200
+
+[[http_service.checks]]
+  interval = "15s"
+  timeout = "5s"
+  grace_period = "10s"
+  method = "GET"
+  path = "/"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  cpus = 1

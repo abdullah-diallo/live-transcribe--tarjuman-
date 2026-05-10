@@ -1,0 +1,470 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ConnectionState, LiveSegment } from "@/types";
+import {
+  DEEPGRAM_KEEPALIVE_INTERVAL_MS,
+  RECONNECT_BACKOFF,
+} from "@/lib/constants";
+
+export interface UseDeepgramOptions {
+  /**
+   * Source of Int16 PCM frames. Built by `createAudioPipeline` — its
+   * `port.onmessage` fires every ~40ms with an ArrayBuffer ready to
+   * forward to Deepgram as a binary WebSocket frame.
+   */
+  pcmNode: AudioWorkletNode | null;
+  sourceLanguage: string;
+  /** Tear down when false. Drives the connection lifecycle effect. */
+  enabled: boolean;
+  /**
+   * When true (and enabled), drops outbound PCM frames + sends KeepAlive
+   * pings so the WS doesn't time out. The connection stays open across
+   * pauses, and the audio graph keeps running (frames are discarded on
+   * the send side rather than gating the worklet itself).
+   */
+  paused: boolean;
+}
+
+export interface UseDeepgramReturn {
+  segments: LiveSegment[];
+  interimText: string;
+  connectionState: ConnectionState;
+  error: string | null;
+  reconnectAttempt: number;
+  resetTranscript: () => void;
+}
+
+interface DeepgramWord {
+  word: string;
+  start?: number;
+  end?: number;
+  confidence?: number;
+  speaker?: number;
+  speaker_confidence?: number;
+}
+
+interface DeepgramResultMessage {
+  type: "Results";
+  is_final: boolean;
+  speech_final?: boolean;
+  start: number;
+  duration: number;
+  channel: {
+    alternatives: {
+      transcript: string;
+      confidence?: number;
+      words?: DeepgramWord[];
+    }[];
+  };
+}
+
+type DeepgramMessage =
+  | DeepgramResultMessage
+  | { type: "Metadata" }
+  | { type: "UtteranceEnd" }
+  | { type: "SpeechStarted" };
+
+/**
+ * Drop a final segment if Deepgram's confidence falls below this threshold.
+ * Khutbah audio captured through PA + room reverb typically scores 0.6–0.85
+ * on real speech; ambient cough/AC/crowd misheard as broken Arabic lands
+ * well under 0.3. The previous 0.5 cutoff was over-aggressive and silently
+ * suppressed legitimate finals — making the UI feel slow when Deepgram had
+ * actually returned text.
+ */
+const FINAL_CONFIDENCE_THRESHOLD = 0.3;
+
+function makeId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+/**
+ * Opens a Deepgram live-transcription WebSocket and forwards Int16 PCM
+ * frames (40ms each, 16kHz mono, Linear16) emitted by an AudioWorkletNode.
+ * Exposes both interim and finalized segments.
+ *
+ * Reconnects on abnormal close with exponential backoff
+ * ([1s, 2s, 4s, 8s, 16s, 30s]). On auth-style failures (1008, 4001/8/9)
+ * or handshake rejection (1006 before any successful open), the hook
+ * surfaces the error and stops retrying rather than thrashing.
+ *
+ * On `paused`: outbound frames are dropped at the WebSocket boundary
+ * (a `pausedRef` guards the send) and a KeepAlive message is sent every
+ * 5s so the WS doesn't time out. Deepgram drops idle connections after
+ * ~10s; the connection itself stays open across pause/resume cycles.
+ *
+ * All connection-scoped state lives in the effect closure — NOT in
+ * component-lifetime refs — so React StrictMode's dev double-mount can
+ * never cross wires between the fake and real connection attempts.
+ */
+export function useDeepgram({
+  pcmNode,
+  sourceLanguage,
+  enabled,
+  paused,
+}: UseDeepgramOptions): UseDeepgramReturn {
+  const [segments, setSegments] = useState<LiveSegment[]>([]);
+  const [interimText, setInterimText] = useState("");
+  const [connectionState, setConnectionState] =
+    useState<ConnectionState>("idle");
+  const [error, setError] = useState<string | null>(null);
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
+
+  // Hide stale StrictMode closures behind a stable "generation" — each
+  // effect invocation gets a unique id; handlers ignore events from older
+  // generations.
+  const generationRef = useRef(0);
+
+  // Exposed by the connection effect so the pause/resume sibling effect can
+  // send KeepAlive pings without rebuilding the WS.
+  const liveControlsRef = useRef<{ ws: WebSocket | null }>({ ws: null });
+
+  // Read by the worklet's port.onmessage handler to gate outbound frames.
+  // A ref (not state) so the handler always sees the latest paused value
+  // without re-establishing the WS each time it flips.
+  const pausedRef = useRef(false);
+
+  const resetTranscript = useCallback(() => {
+    setSegments([]);
+    setInterimText("");
+  }, []);
+
+  useEffect(() => {
+    if (!enabled || !pcmNode) {
+      setConnectionState("idle");
+      setReconnectAttempt(0);
+      return;
+    }
+
+    const myGeneration = ++generationRef.current;
+    const isLive = () => generationRef.current === myGeneration;
+
+    // Closure-local state. NOT refs. This entire block is torn down on
+    // the next mount, and nothing leaks into the re-mount.
+    let cancelled = false;
+    let ws: WebSocket | null = null;
+    let reconnectTimer: number | null = null;
+    let attempt = 0;
+    let hasEverOpened = false;
+
+    setReconnectAttempt(0);
+    setError(null);
+
+    const tearDown = () => {
+      if (reconnectTimer !== null) {
+        window.clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      // Detach the PCM frame handler. The worklet keeps emitting frames as
+      // long as the audio context is alive; without a handler they are
+      // silently discarded by the browser. The audio-processor teardown
+      // closes the port and disconnects the node when the user stops.
+      pcmNode.port.onmessage = null;
+      if (ws) {
+        try {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "CloseStream" }));
+          }
+        } catch {
+          /* ignore */
+        }
+        try {
+          ws.close(1000);
+        } catch {
+          /* ignore */
+        }
+      }
+      ws = null;
+      liveControlsRef.current = { ws: null };
+    };
+
+    const scheduleReconnect = () => {
+      if (cancelled || !isLive()) return;
+      if (attempt >= RECONNECT_BACKOFF.length) {
+        setConnectionState("error");
+        setError(
+          (prev) =>
+            prev ??
+            `Could not reach Deepgram after ${RECONNECT_BACKOFF.length} attempts. Check your network connection.`
+        );
+        return;
+      }
+      const delay = RECONNECT_BACKOFF[attempt];
+      attempt += 1;
+      setReconnectAttempt(attempt);
+      setConnectionState("reconnecting");
+      reconnectTimer = window.setTimeout(() => {
+        reconnectTimer = null;
+        if (!cancelled && isLive()) void connect();
+      }, delay);
+    };
+
+    const connect = async () => {
+      if (cancelled || !isLive()) return;
+      setConnectionState(attempt === 0 ? "connecting" : "reconnecting");
+
+      // Step 1: credentials.
+      let creds: { key: string; url: string };
+      try {
+        const res = await fetch(
+          `/api/deepgram?language=${encodeURIComponent(sourceLanguage)}`,
+          { cache: "no-store" }
+        );
+        if (cancelled || !isLive()) return;
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as {
+            error?: string;
+          };
+          const msg =
+            body?.error ?? `Failed to fetch Deepgram token (${res.status})`;
+          // 500 missing-config and 502 Deepgram-rejected responses are
+          // unrecoverable — surface them once and stop retrying.
+          const unrecoverable =
+            (res.status === 500 && /API_KEY.*not configured/i.test(msg)) ||
+            res.status === 502;
+          if (unrecoverable) {
+            setError(msg);
+            setConnectionState("error");
+            return;
+          }
+          throw new Error(msg);
+        }
+        creds = await res.json();
+        if (!creds.key || !creds.url) {
+          throw new Error("Deepgram credentials missing in server response");
+        }
+      } catch (e) {
+        if (cancelled || !isLive()) return;
+        setError(e instanceof Error ? e.message : String(e));
+        scheduleReconnect();
+        return;
+      }
+
+      if (cancelled || !isLive()) return;
+
+      // Step 2: open the WebSocket to our local proxy. The proxy
+      // (server.js → /api/deepgram-ws) authenticates with Deepgram
+      // server-side, so the browser carries no Deepgram credentials —
+      // just the single-use session token already embedded in `creds.url`.
+      console.log("[deepgram] opening WS to proxy:", creds.url);
+      try {
+        ws = new WebSocket(creds.url);
+      } catch (e) {
+        if (cancelled || !isLive()) return;
+        setError(e instanceof Error ? e.message : String(e));
+        scheduleReconnect();
+        return;
+      }
+
+      const currentWs = ws;
+      liveControlsRef.current.ws = currentWs;
+
+      currentWs.onopen = () => {
+        console.log("[deepgram] ws onopen — authenticated successfully", {
+          subprotocolUsed: currentWs.protocol || "(none echoed back)",
+        });
+        if (cancelled || !isLive() || ws !== currentWs) {
+          try {
+            currentWs.close(1000);
+          } catch {
+            /* ignore */
+          }
+          return;
+        }
+        setConnectionState("connected");
+        attempt = 0;
+        hasEverOpened = true;
+        setReconnectAttempt(0);
+
+        // Step 3: subscribe to the PCM worklet's frame stream. Each message
+        // is an Int16 ArrayBuffer (40ms @ 16kHz, mono) ready to forward as
+        // a binary WebSocket frame.
+        pcmNode.port.onmessage = (event) => {
+          if (cancelled || !isLive() || ws !== currentWs) return;
+          if (pausedRef.current) return;
+          if (currentWs.readyState !== WebSocket.OPEN) return;
+          const data = event.data as ArrayBuffer;
+          if (data && data.byteLength > 0) currentWs.send(data);
+        };
+      };
+
+      currentWs.onmessage = (event) => {
+        if (cancelled || !isLive() || ws !== currentWs) return;
+        if (typeof event.data !== "string") return;
+        let msg: DeepgramMessage;
+        try {
+          msg = JSON.parse(event.data) as DeepgramMessage;
+        } catch {
+          return;
+        }
+        if (msg.type !== "Results") return;
+
+        const transcript = msg.channel?.alternatives?.[0]?.transcript ?? "";
+        if (!transcript.trim()) return;
+
+        if (msg.is_final) {
+          const alt = msg.channel.alternatives[0];
+          const confidence = alt?.confidence ?? 0;
+          if (confidence < FINAL_CONFIDENCE_THRESHOLD) {
+            console.log(
+              `[deepgram] dropped low-confidence final (${confidence.toFixed(
+                2
+              )}): "${transcript.slice(0, 60)}"`
+            );
+            setInterimText("");
+            return;
+          }
+          // Pick the dominant speaker for this segment by total word duration.
+          // Falls back to the first word's speaker, then undefined if no
+          // speaker info (diarization disabled or single-speaker session).
+          const words = alt?.words ?? [];
+          let speaker: number | undefined;
+          if (words.length > 0) {
+            const totals = new Map<number, number>();
+            for (const w of words) {
+              if (typeof w.speaker !== "number") continue;
+              const dur = (w.end ?? 0) - (w.start ?? 0);
+              totals.set(w.speaker, (totals.get(w.speaker) ?? 0) + dur);
+            }
+            if (totals.size > 0) {
+              let maxDur = -1;
+              for (const [s, d] of totals) {
+                if (d > maxDur) {
+                  maxDur = d;
+                  speaker = s;
+                }
+              }
+            } else if (typeof words[0].speaker === "number") {
+              speaker = words[0].speaker;
+            }
+          }
+          setSegments((prev) => [
+            ...prev,
+            {
+              id: makeId(),
+              text: transcript,
+              isFinal: true,
+              timestamp:
+                typeof msg.start === "number"
+                  ? Math.max(0, msg.start)
+                  : prev[prev.length - 1]?.timestamp ?? 0,
+              durationSec:
+                typeof msg.duration === "number" ? msg.duration : undefined,
+              speaker,
+              confidence,
+            },
+          ]);
+          setInterimText("");
+        } else {
+          setInterimText(transcript);
+        }
+      };
+
+      currentWs.onerror = (event) => {
+        // The browser hides the actual cause for security reasons; this is
+        // a generic Event with no useful detail. The follow-up `onclose`
+        // gets the close code which is what we actually act on.
+        console.log("[deepgram] ws onerror (details hidden by browser)", event);
+      };
+
+      currentWs.onclose = (event) => {
+        console.log("[deepgram] ws onclose", {
+          code: event.code,
+          reason: event.reason || "(empty)",
+          wasClean: event.wasClean,
+          hasEverOpened,
+        });
+
+        if (ws === currentWs) ws = null;
+        if (liveControlsRef.current.ws === currentWs) {
+          liveControlsRef.current = { ws: null };
+        }
+        // Stop forwarding PCM frames to a closed socket. The worklet keeps
+        // running; the audio-processor teardown will close the port when
+        // the user actually stops the recording.
+        pcmNode.port.onmessage = null;
+
+        if (cancelled || !isLive()) return;
+        if (event.code === 1000) {
+          setConnectionState("idle");
+          return;
+        }
+
+        // 1008 / 401-style closures from our proxy mean the session token
+        // expired or was missing — fixable by reconnecting (which fetches a
+        // fresh token). 1011 is server error (Deepgram-side).
+        const authFailure =
+          event.code === 1008 ||
+          event.code === 4001 ||
+          event.code === 4008 ||
+          event.code === 4009;
+        const badRequest = event.code === 1002 || event.code === 1003;
+        const handshakeRejectionBeforeFirstOpen =
+          event.code === 1006 && !hasEverOpened;
+
+        if (handshakeRejectionBeforeFirstOpen) {
+          setError(
+            `Could not reach the local Deepgram proxy (close code ${event.code}). Make sure the dev server was started with \`npm run dev\` (which uses server.js, not bare \`next dev\`). If you see \`> Ready on http://localhost:3000 (with /api/deepgram-ws proxy)\` in the terminal, the proxy is up — in that case the problem is the proxy → Deepgram leg; check the server log for [deepgram-proxy] errors.`
+          );
+          setConnectionState("error");
+          return;
+        }
+        if (authFailure) {
+          setError(
+            `Proxy rejected the session (code ${event.code}). The token may have expired between issue and use; reconnect should re-issue.`
+          );
+          setConnectionState("error");
+          return;
+        }
+        if (badRequest) {
+          setError(
+            `Deepgram rejected the request (code ${event.code}, reason="${event.reason || "(empty)"}"). Unsupported audio format or parameters.`
+          );
+          setConnectionState("error");
+          return;
+        }
+
+        scheduleReconnect();
+      };
+    };
+
+    void connect();
+
+    return () => {
+      cancelled = true;
+      tearDown();
+    };
+  }, [pcmNode, sourceLanguage, enabled]);
+
+  // Pause/resume effect — does NOT trigger a reconnect. It flips the
+  // pausedRef the worklet handler reads, and owns the KeepAlive timer
+  // that keeps Deepgram from dropping the idle WS during silence.
+  useEffect(() => {
+    pausedRef.current = paused;
+    if (!enabled || !paused) return;
+    const interval = window.setInterval(() => {
+      const { ws } = liveControlsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        try {
+          ws.send(JSON.stringify({ type: "KeepAlive" }));
+        } catch {
+          /* ignore */
+        }
+      }
+    }, DEEPGRAM_KEEPALIVE_INTERVAL_MS);
+    return () => window.clearInterval(interval);
+  }, [paused, enabled]);
+
+  return {
+    segments,
+    interimText,
+    connectionState,
+    error,
+    reconnectAttempt,
+    resetTranscript,
+  };
+}

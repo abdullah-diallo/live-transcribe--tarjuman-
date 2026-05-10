@@ -1,0 +1,36 @@
+# Anything that should never end up in the build context — both for
+# image-size reasons and to keep secrets out of layers.
+
+# Local artifacts and caches
+node_modules
+.next
+.turbo
+*.log
+.DS_Store
+
+# Local env (secrets!)
+.env
+.env.local
+.env.*.local
+
+# Git
+.git
+.gitignore
+
+# IDE / editor
+.vscode
+.idea
+
+# Convex generated types are regenerated at build time? No — they're
+# committed and used by both client and server-side code. Include them.
+# !convex/_generated   (we WANT this in the build context)
+
+# Docs and dev-only files
+README.md
+DEPLOY.md
+prototype.tsx
+PROMPT.md
+
+# Test outputs (none yet, but defensive)
+coverage
+playwright-report
