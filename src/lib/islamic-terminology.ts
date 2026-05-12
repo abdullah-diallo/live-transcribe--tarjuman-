@@ -171,4 +171,11 @@ Output: La hawla wa la quwwata illa billah (there is no power and no might excep
 ### Example 6 — speaker references multiple prophets
 Input:  أرسل الله إبراهيم وموسى وعيسى ومحمدا
 Output: Allah sent Ibrahim (a.s.), Musa (a.s.), Isa (a.s.), and Muhammad ﷺ.
+
+### Example 7 — partial / truncated segment (live transcription artifact)
+The STT engine sometimes commits a segment that ends mid-word. Translate
+what is there and end with "..." — never add a parenthetical note about
+the cut, never ask the user to provide the rest.
+Input:  ان الحمد لله نحو
+Output: All praise is due to Allah...
 `.trim();
