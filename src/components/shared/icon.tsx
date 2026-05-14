@@ -15,6 +15,7 @@ export type IconName =
   | "swap"
   | "check"
   | "trash"
+  | "edit"
   | "close"
   | "speaker"
   | "speakerOff"
@@ -125,6 +126,12 @@ export function Icon({
     trash: (
       <svg {...common} fill="none" stroke={color} strokeWidth={strokeWidth}>
         <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M6 6v14a2 2 0 002 2h8a2 2 0 002-2V6" />
+      </svg>
+    ),
+    edit: (
+      <svg {...common} fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 20h9" />
+        <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
       </svg>
     ),
     close: (
