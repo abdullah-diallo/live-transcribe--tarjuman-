@@ -133,10 +133,11 @@ export async function GET(req: Request) {
     punctuate: "true",
     smart_format: "true",
     interim_results: "true",
-    // 200ms is the fastest comfortable value: direct-mic and arm's-length
-    // PA capture rarely have intra-sentence pauses > 200ms. If verification
-    // on real khutbah audio shows mid-sentence fragmentation, bump to 250.
-    endpointing: "200",
+    // 500ms tolerates natural sub-sentence pauses in Arabic khutbah / lecture
+    // delivery (e.g. between "السلام عليكم" and "ورحمة الله"). The earlier
+    // value of 200ms was tuned for direct-mic captures and fragmented natural
+    // speech at every pause >200ms, dropping words at segment boundaries.
+    endpointing: "500",
     // Tag each word with a speaker id so the client can either label them or
     // filter to a single dominant speaker. Critical for non-khutbah lectures
     // and panel discussions; a no-op when only one person is speaking.
