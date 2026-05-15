@@ -27,17 +27,29 @@ export class MicUnavailableError extends Error {
 }
 
 /**
- * Builds the audio processing graph:
- *   mic → highpass(85Hz) → compressor(2.5:1 @ -18dB) → gain(1.1×)
- *                                                       ├── AudioWorkletNode → Int16 PCM frames → Deepgram
- *                                                       └── AnalyserNode (fed to level meter)
+ * Builds the audio processing graph, tuned for OUTDOOR PA-distance capture
+ * (the primary use case is masjid khutbahs, including Madinah Haram and
+ * other open-air gatherings where the phone is meters away from a PA
+ * speaker, mixed with wind, marble reflections, and crowd murmur):
+ *
+ *   mic → highpass(120Hz)  ← cuts wind rumble + AC hum
+ *       → lowpass(7kHz)    ← cuts outdoor hiss + crowd sibilance
+ *       → compressor(4:1 @ -26dB)  ← brings up the distant quiet speech
+ *       → gain(1.6×)       ← post-compression makeup for distance
+ *           ├── AudioWorkletNode (with -55 dBFS noise gate) → Int16 PCM → Deepgram
+ *           └── AnalyserNode (fed to level meter)
  *
  * Echo cancellation, noise suppression, and auto gain control are enabled at
- * the capture level before the signal reaches our graph.
+ * the capture level. noiseSuppression is required for the macOS Chrome chain
+ * to produce non-silent audio (empirically verified — disabling it caused
+ * the mic to read literal silence).
  *
  * Audio reaches Deepgram as Linear16 PCM in 40ms frames — small enough that
  * the time between speech and the first interim transcript stays under the
- * perceptual threshold for a "live" feel.
+ * perceptual threshold for a "live" feel. Frames whose RMS falls below the
+ * worklet's -55 dBFS gate are zero-filled so Deepgram sees clean silence
+ * during gaps between phrases (helps endpointing without breaking the WS
+ * cadence).
  */
 export async function createAudioPipeline(): Promise<AudioPipeline> {
   if (
@@ -97,27 +109,44 @@ export async function createAudioPipeline(): Promise<AudioPipeline> {
 
   const source = audioContext.createMediaStreamSource(sourceStream);
 
+  // 120Hz highpass cuts wind rumble + AC hum + foot shuffling. Most wind
+  // energy lives below 100Hz; speech intelligibility starts above 200Hz, so
+  // the small "warmth" loss is a fair trade for clean outdoor capture.
   const highPass = audioContext.createBiquadFilter();
   highPass.type = "highpass";
-  highPass.frequency.value = 85;
+  highPass.frequency.value = 120;
   highPass.Q.value = 0.7;
 
-  // Compressor settings tuned to handle PA-distance audio without pumping on
-  // close-mic speech. The earlier 4:1 / -24dB / 1.5x-gain stack worked when
-  // Opus downstream was hiding the artifacts; Linear16 surfaces them, so the
-  // dynamics need to be gentler.
+  // 7kHz lowpass cuts high-frequency outdoor hiss + crowd sibilance. Speech
+  // content sits below 4kHz; the 4-7kHz range carries some consonant detail
+  // worth keeping, but everything above is noise for our use case.
+  const lowPass = audioContext.createBiquadFilter();
+  lowPass.type = "lowpass";
+  lowPass.frequency.value = 7000;
+  lowPass.Q.value = 0.7;
+
+  // Compressor tuned for OUTDOOR PA distance — Madinah Haram courtyards,
+  // open-air gatherings, conferences. The aggressive 4:1 / -26dB stack
+  // brings up distant quiet speech that would otherwise sit too low for
+  // Deepgram. The earlier gentle 2.5:1 / -18dB was tuned for close-mic
+  // (no pumping artifacts on direct speech) but left distant audio
+  // under-amplified.
   const compressor = audioContext.createDynamicsCompressor();
-  compressor.threshold.value = -18;
-  compressor.knee.value = 8;
-  compressor.ratio.value = 2.5;
+  compressor.threshold.value = -26;
+  compressor.knee.value = 6;
+  compressor.ratio.value = 4;
   compressor.attack.value = 0.003;
   compressor.release.value = 0.25;
 
+  // 1.6x makeup gain after compression. Distant outdoor PA captured by
+  // a phone mic typically arrives 10-15dB lower than indoor close-mic;
+  // makeup gain compensates so Deepgram sees usable signal levels.
   const gain = audioContext.createGain();
-  gain.gain.value = 1.1;
+  gain.gain.value = 1.6;
 
   source.connect(highPass);
-  highPass.connect(compressor);
+  highPass.connect(lowPass);
+  lowPass.connect(compressor);
   compressor.connect(gain);
 
   // The downstream nodes are an AnalyserNode (visualizer) and an
@@ -158,7 +187,7 @@ export async function createAudioPipeline(): Promise<AudioPipeline> {
     } catch {
       /* already closed */
     }
-    const nodes: AudioNode[] = [source, highPass, compressor, gain, driverSink, pcmNode, analyser];
+    const nodes: AudioNode[] = [source, highPass, lowPass, compressor, gain, driverSink, pcmNode, analyser];
     for (const n of nodes) {
       try {
         n.disconnect();
