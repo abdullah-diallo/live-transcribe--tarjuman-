@@ -142,11 +142,16 @@ export async function GET(req: Request) {
     // filter to a single dominant speaker. Critical for non-khutbah lectures
     // and panel discussions; a no-op when only one person is speaking.
     diarize: "true",
-    // Return detected_language + language_confidence with every Result so the
-    // client can drop segments where the detected language doesn't match the
-    // user-selected source (e.g., English side-conversation bleeding into an
-    // Arabic khutbah recording).
-    detect_language: "true",
+    // NOTE: detect_language=true was tried here as a way to filter
+    // off-language audio (e.g., English bleed in an Arabic session), but
+    // Deepgram rejects the WS handshake when this is combined with a fixed
+    // `language=ar` on nova-3 — the param is deprecated in favor of
+    // `language=multi`. The browser sees the rejection as close code 1006.
+    // Off-language filtering now relies on FINAL_CONFIDENCE_THRESHOLD
+    // (0.55) in use-deepgram.ts plus the speaker-lock. If we ever need
+    // strict language detection back, switch to `language=multi` and add
+    // per-result language filtering — separate task with its own accuracy
+    // verification on Arabic.
   });
   const deepgramUrl = `wss://api.deepgram.com/v1/listen?${dgParams.toString()}`;
 
