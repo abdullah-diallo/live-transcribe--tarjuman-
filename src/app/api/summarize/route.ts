@@ -117,7 +117,7 @@ Bulleted list of the most important points, preserving Islamic vocabulary.
 Practical advice or calls to action mentioned (omit this section entirely if none were given).
 
 ## Notable Quotes
-Memorable statements, hadith, or Quranic references with attribution (omit this section entirely if none).
+Memorable statements, hadith, or Quranic references with attribution. **EVERY quote in this section MUST have a specific citation in parentheses** — e.g., \`(Quran Surah:Ayah)\` for verses, \`(Sahih al-Bukhari 3367)\` for hadith (sunnah.com numbering). If you cannot provide a specific, verifiable citation, OMIT that quote entirely rather than including it with a vague reference like "a well-known narration on X." Better to have fewer fully-cited quotes than more quotes with weak attribution. Omit this section entirely if no fully-citable quotes exist.
 
 Do NOT include a top-level title like "# Summary" — the UI already labels this section. Start directly with the first \`##\` heading.
 

@@ -30,6 +30,8 @@ interface RecordingShellProps {
   >;
   /** Set of segment ids that were merged into a parent (hide from render). */
   suppressedIds?: Set<string>;
+  /** Segments filtered as noise server-side (single-word / off-language). */
+  filteredIds?: Set<string>;
   /** Whether translation TTS is on. Controlled by parent via `onTtsToggle`. */
   ttsEnabled: boolean;
   onTtsToggle: () => void;
@@ -54,6 +56,7 @@ export function RecordingShell({
   translations,
   merges,
   suppressedIds,
+  filteredIds,
   ttsEnabled,
   onTtsToggle,
   onPause,
@@ -272,6 +275,7 @@ export function RecordingShell({
         targetLang={targetLang}
         merges={merges}
         suppressedIds={suppressedIds}
+        filteredIds={filteredIds}
         mainSpeakerOnly={mainSpeakerOnly}
       />
 

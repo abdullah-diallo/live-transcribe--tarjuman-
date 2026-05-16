@@ -83,6 +83,132 @@ function languageName(code: string | undefined): string {
   return LANGUAGE_NAMES[code] ?? code;
 }
 
+// ─── Model routing ─────────────────────────────────────────────────────────
+// Haiku 4.5 is the default — fast and cheap, great for mechanical translation
+// with the terminology rules. Sonnet 4.6 takes over only when the segment
+// looks like Quran/hadith content (where recognition + citation accuracy
+// matter and Haiku reliably misses references). Average khutbah ends up
+// ~85% Haiku / ~15% Sonnet → ~1.6× cost vs Haiku-only, much cheaper than
+// going all-Sonnet.
+
+const MODEL_HAIKU = "claude-haiku-4-5-20251001";
+const MODEL_SONNET = "claude-sonnet-4-6";
+
+// Arabic markers that suggest hadith narration. Includes common isnad
+// openers and the most-cited companion narrators.
+const HADITH_MARKERS_AR: RegExp[] = [
+  /قال\s+النبي/,
+  /قال\s+رسول\s+الله/,
+  /قال\s+صلى\s+الله\s+عليه\s+وسلم/,
+  /عن\s+(?:أبي|ابن|أنس|عائشة|عمر|علي|عثمان|أبو|سعد|جابر|بريدة)/,
+  /روى\s+(?:البخاري|مسلم|أبو|الترمذي|النسائي|ابن|الإمام|أحمد|مالك|الحاكم|البيهقي)/,
+  /حدثنا/,
+  /أخبرنا/,
+];
+
+const QURAN_MARKERS_AR: RegExp[] = [
+  /قال\s+الله\s+(?:تعالى|عز\s+وجل|سبحانه)/,
+  /في\s+سورة/,
+  /(?:سورة|الآية|آية)\s+/,
+];
+
+// English source: speaker is delivering an Islamic lecture in English and
+// citing/quoting verses or hadiths.
+const HADITH_MARKERS_EN: RegExp[] = [
+  /\bthe\s+prophet\s+(?:muhammad\s+)?(?:said|narrated|reported|told|taught)/i,
+  /\b(?:narrated|reported)\s+by\b/i,
+  /\bsahih\s+(?:al-)?bukhari\b/i,
+  /\bsahih\s+muslim\b/i,
+  /\bsunan\s+(?:abi\s+dawud|at-?tirmidhi|an-?nasa|ibn\s+majah)/i,
+  /\bmuwatta\b/i,
+];
+
+const QURAN_MARKERS_EN: RegExp[] = [
+  /\ballah\s+(?:says?|said|stated)/i,
+  /\bin\s+(?:surah|surat)\b/i,
+  /\bquran\b/i,
+  /\bayah\b/i,
+];
+
+const ALL_MARKERS: RegExp[] = [
+  ...HADITH_MARKERS_AR,
+  ...QURAN_MARKERS_AR,
+  ...HADITH_MARKERS_EN,
+  ...QURAN_MARKERS_EN,
+];
+
+// Citation patterns in a prior translation that signal "context was about
+// Quran/hadith" — escalate continuations to Sonnet too so a verse split
+// across multiple breaths gets the same model for clean merge.
+const TRANSLATION_CITATION_RE =
+  /[[(]\s*(?:Quran|Sahih|Sunan|Jami|Muwatta|Musnad)/i;
+
+function looksLikeIslamicCitation(text: string): boolean {
+  if (!text) return false;
+  for (const re of ALL_MARKERS) if (re.test(text)) return true;
+  return false;
+}
+
+function routeModel(
+  text: string,
+  context: TranslateRequest["context"]
+): string {
+  if (looksLikeIslamicCitation(text)) return MODEL_SONNET;
+  if (Array.isArray(context)) {
+    for (const c of context) {
+      if (looksLikeIslamicCitation(c.sourceText)) return MODEL_SONNET;
+      if (c.translatedText && TRANSLATION_CITATION_RE.test(c.translatedText))
+        return MODEL_SONNET;
+    }
+  }
+  return MODEL_HAIKU;
+}
+
+// ─── Noise filter ──────────────────────────────────────────────────────────
+// Drop segments before they ever hit the LLM:
+//   1. Fewer than 3 words (split on whitespace) — single-word interjections
+//      like "اجمعين" alone are noise.
+//   2. RTL source but the source text is <50% RTL-script characters — catches
+//      English loanwords transliterated into Arabic (e.g., "اوكي"/"okay")
+//      and accidental English bleed in an Arabic session.
+
+const ARABIC_SCRIPT_RE = /[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/;
+const HEBREW_SCRIPT_RE = /[֐-׿]/;
+const RTL_LANGS = new Set(["ar", "ur", "he", "fa", "ps", "sd"]);
+
+function shouldFilterAsNoise(
+  text: string,
+  sourceLang: string | undefined
+): { filter: boolean; reason?: string } {
+  const trimmed = text.trim();
+  if (!trimmed) return { filter: true, reason: "empty" };
+
+  // Word-count filter.
+  const wordCount = trimmed.split(/\s+/).filter(Boolean).length;
+  if (wordCount < 3) {
+    return { filter: true, reason: `too-short (${wordCount} word(s))` };
+  }
+
+  // Off-language script filter for RTL sources.
+  if (sourceLang && RTL_LANGS.has(sourceLang.toLowerCase())) {
+    const visibleChars = trimmed.replace(/[\s\p{P}\p{S}]/gu, "");
+    if (visibleChars.length === 0) return { filter: true, reason: "no-letters" };
+    let scriptChars = 0;
+    const scriptRe =
+      sourceLang.toLowerCase() === "he" ? HEBREW_SCRIPT_RE : ARABIC_SCRIPT_RE;
+    for (const ch of visibleChars) if (scriptRe.test(ch)) scriptChars++;
+    const ratio = scriptChars / visibleChars.length;
+    if (ratio < 0.5) {
+      return {
+        filter: true,
+        reason: `off-language-script (${Math.round(ratio * 100)}% match)`,
+      };
+    }
+  }
+
+  return { filter: false };
+}
+
 function buildUserMessage(opts: {
   text: string;
   sourceName: string;
@@ -208,14 +334,14 @@ Rules:
 - \`fromIds\` must contain only ids from the Context block. Each id was given as \`[id=<value>]\`. Use those exact strings.
 - \`fromIds\` must be IMMEDIATELY CONSECUTIVE in the context (don't skip over unrelated segments in the middle).
 - \`combinedSourceText\` is the full source-language text of the merged-from segments + the current segment concatenated with a single space.
-- \`combinedTranslatedText\` is the full target-language translation of the verse/hadith with the standard inline citation (e.g., \`[Quran Al-Ahzab:56]\` or \`[Sahih al-Bukhari, Hadith 1]\`).
+- \`combinedTranslatedText\` is the full target-language translation of the verse/hadith with the standard inline citation in PARENTHESES (e.g., \`(Quran Al-Ahzab:56)\` or \`(Sahih al-Bukhari 3367)\` — sunnah.com style for hadith).
 - LENGTH CAP: only emit a merge when \`combinedTranslatedText\` is under approximately 600 characters. For very long verses (e.g., Ayat al-Kursi as a whole), let them stay split for readability.
 - If you don't want to merge, simply omit the \`<<<MERGE>>>\` block — output just the plain translation as before.
 
 Example merge output (NEVER actually translate this way unless the current segment really completes a verse):
-The full English translation here with citation. [Quran X:Y]
+The full English translation here with citation. (Quran X:Y)
 <<<MERGE>>>
-{"fromIds":["seg-abc-1"],"combinedSourceText":"<full Arabic>","combinedTranslatedText":"The full English translation here with citation. [Quran X:Y]"}
+{"fromIds":["seg-abc-1"],"combinedSourceText":"<full Arabic>","combinedTranslatedText":"The full English translation here with citation. (Quran X:Y)"}
 
 ${ISLAMIC_TERMINOLOGY_RULES}
 
@@ -281,12 +407,30 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ translatedText: text });
   }
 
+  // Noise filter: drop single-word and off-language-script segments BEFORE
+  // hitting the LLM. Saves cost + latency, and the client uses the
+  // `filtered: true` flag to suppress the segment from the transcript
+  // entirely (neither source card nor translation card renders).
+  const noise = shouldFilterAsNoise(text, source);
+  if (noise.filter) {
+    return NextResponse.json({
+      translatedText: "",
+      filtered: true,
+      filterReason: noise.reason,
+    });
+  }
+
   const sourceName = languageName(source);
   const targetName = languageName(target);
 
-  // 15s timeout. Anthropic Haiku usually responds in 0.3–1.5s for short
-  // segments; anything beyond 15s indicates upstream trouble and we'd
-  // rather fail fast than hang the user's transcript indefinitely.
+  // Hybrid routing: Haiku for normal speech, Sonnet for Quran/hadith content
+  // where verse/hadith recognition + citation accuracy matter.
+  const model = routeModel(text, context);
+  const maxTokens = model === MODEL_SONNET ? 1500 : 500;
+
+  // 15s timeout. Haiku usually responds in 0.3–1.5s; Sonnet ~1–3s for short
+  // segments. Anything beyond 15s indicates upstream trouble and we'd rather
+  // fail fast than hang the user's transcript indefinitely.
   let response: Response;
   try {
     response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -297,8 +441,8 @@ export async function POST(req: NextRequest) {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 500,
+        model,
+        max_tokens: maxTokens,
         system: [
           {
             type: "text",

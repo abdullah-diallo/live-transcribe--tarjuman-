@@ -24,6 +24,8 @@ interface LiveTranscriptProps {
     { fromIds: string[]; combinedSourceText: string; combinedTranslatedText: string }
   >;
   suppressedIds?: Set<string>;
+  /** Segments filtered as noise (too short / off-language) — hide entirely. */
+  filteredIds?: Set<string>;
 }
 
 const SPEAKER_COLORS = [
@@ -92,6 +94,7 @@ export function LiveTranscript({
   mainSpeakerOnly = false,
   merges,
   suppressedIds,
+  filteredIds,
 }: LiveTranscriptProps) {
   const { scrollRef, onScroll, isStuck, scrollToBottom } =
     useStickyBottom<HTMLDivElement>(200);
@@ -121,11 +124,15 @@ export function LiveTranscript({
   const speakerFiltered = mainSpeakerOnly
     ? segments.filter((s) => s.speaker === undefined || s.speaker === dominant)
     : segments;
-  // Hide child segments that were merged into a parent (verse/hadith
-  // continuation absorbed by a later card).
-  const visibleSegments = suppressedIds
-    ? speakerFiltered.filter((s) => !suppressedIds.has(s.id))
-    : speakerFiltered;
+  // Hide:
+  //   - children merged into a parent (verse/hadith continuation absorbed
+  //     by a later card)
+  //   - noise segments filtered server-side (single-word, off-language)
+  const visibleSegments = speakerFiltered.filter((s) => {
+    if (suppressedIds?.has(s.id)) return false;
+    if (filteredIds?.has(s.id)) return false;
+    return true;
+  });
 
   const speakerSet = new Set<number>();
   for (const s of segments) {

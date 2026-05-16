@@ -30,6 +30,11 @@ export interface UseTranslatorReturn {
   merges: Record<string, MergeRecord>;
   /** Segment ids that were merged INTO another segment — hide these from rendering. */
   suppressedIds: Set<string>;
+  /**
+   * Segment ids the server filtered as noise (too short, off-language).
+   * These segments don't render at all and are skipped on persistence.
+   */
+  filteredIds: Set<string>;
   reset: () => void;
 }
 
@@ -52,6 +57,7 @@ export function useTranslator({
   const [translations, setTranslations] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [merges, setMerges] = useState<Record<string, MergeRecord>>({});
+  const [filteredIds, setFilteredIds] = useState<Set<string>>(new Set());
   const inFlightRef = useRef<Set<string>>(new Set());
   const [, forcePendingRender] = useState(0);
   // Convex Auth token — attached as Bearer to /api/translate so the route
@@ -63,6 +69,7 @@ export function useTranslator({
     setTranslations({});
     setErrors({});
     setMerges({});
+    setFilteredIds(new Set());
     inFlightRef.current = new Set();
     forcePendingRender((n) => n + 1);
   };
@@ -90,7 +97,8 @@ export function useTranslator({
         s.isFinal &&
         translations[s.id] === undefined &&
         !inFlightRef.current.has(s.id) &&
-        !errors[s.id]
+        !errors[s.id] &&
+        !filteredIds.has(s.id)
     );
     if (toTranslate.length === 0) return;
 
@@ -135,10 +143,23 @@ export function useTranslator({
           const data = (await res.json().catch(() => ({}))) as {
             translatedText?: string;
             merge?: MergeRecord;
+            filtered?: boolean;
             error?: string;
           };
-          if (!res.ok || !data.translatedText) {
+          if (!res.ok) {
             const msg = data.error ?? `Translation failed (${res.status})`;
+            setErrors((prev) => ({ ...prev, [seg.id]: msg }));
+          } else if (data.filtered) {
+            // Server filtered as noise (too short / off-language) — suppress
+            // the whole segment from the transcript without rendering an error.
+            setFilteredIds((prev) => {
+              if (prev.has(seg.id)) return prev;
+              const next = new Set(prev);
+              next.add(seg.id);
+              return next;
+            });
+          } else if (!data.translatedText) {
+            const msg = data.error ?? "Translator returned no text";
             setErrors((prev) => ({ ...prev, [seg.id]: msg }));
           } else {
             setTranslations((prev) => ({
@@ -168,7 +189,15 @@ export function useTranslator({
     return () => {
       cancelled = true;
     };
-  }, [segments, sourceLanguage, targetLanguage, translations, errors, authToken]);
+  }, [
+    segments,
+    sourceLanguage,
+    targetLanguage,
+    translations,
+    errors,
+    filteredIds,
+    authToken,
+  ]);
 
   // Derive the suppressed set from the merge records. Cheap; recomputes
   // only when `merges` changes.
@@ -186,6 +215,7 @@ export function useTranslator({
     errors,
     merges,
     suppressedIds,
+    filteredIds,
     reset,
   };
 }

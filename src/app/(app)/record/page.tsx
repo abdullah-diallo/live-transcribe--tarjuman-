@@ -161,6 +161,14 @@ export default function RecordPage() {
 
     const ready = deepgram.segments.filter((seg) => {
       if (!seg.isFinal || flushed.has(seg.id)) return false;
+      // Don't persist noise — single-word / off-language segments the
+      // translator dropped server-side. They'd just clutter the saved
+      // session.
+      if (translator.filteredIds.has(seg.id)) {
+        // Mark as flushed so we don't reconsider it on every tick.
+        flushed.add(seg.id);
+        return false;
+      }
       if (sourceTargetSame) return true;
       return translator.translations[seg.id] !== undefined;
     });
@@ -359,6 +367,7 @@ export default function RecordPage() {
         translations={translator.translations}
         merges={translator.merges}
         suppressedIds={translator.suppressedIds}
+        filteredIds={translator.filteredIds}
         ttsEnabled={ttsEnabled}
         onTtsToggle={toggleTts}
         onPause={handlePause}
