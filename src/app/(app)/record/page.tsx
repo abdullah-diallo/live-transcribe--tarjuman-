@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
@@ -217,6 +217,17 @@ export default function RecordPage() {
     sourceLanguage: sourceLang,
     targetLanguage: targetLang,
   });
+
+  // Segments hidden from the LIVE recording transcript: deterministic noise
+  // (filteredIds) PLUS model-flagged off-language transliterations
+  // (offLanguageIds). Off-language is hidden live but still PERSISTED source-only
+  // (persistence keys on translator.filteredIds only), so nothing is ever lost.
+  const liveHiddenIds = useMemo(() => {
+    if (translator.offLanguageIds.size === 0) return translator.filteredIds;
+    const s = new Set(translator.filteredIds);
+    for (const id of translator.offLanguageIds) s.add(id);
+    return s;
+  }, [translator.filteredIds, translator.offLanguageIds]);
 
   const elapsed = useSessionTimer(isActive, recorder.phase === "paused");
   const elapsedRef = useRef(elapsed);
@@ -625,6 +636,7 @@ export default function RecordPage() {
       translations: translator.translations,
       merges: translator.merges,
       filteredIds: translator.filteredIds,
+      offLanguageIds: translator.offLanguageIds,
       sourceLang,
       targetLang,
     };
@@ -690,6 +702,7 @@ export default function RecordPage() {
         translations: snapTranslations,
         merges: captured.merges,
         filteredIds: captured.filteredIds,
+        offLanguageIds: captured.offLanguageIds,
         durationSec: finalDuration,
         sourceLang: captured.sourceLang,
         targetLang: captured.targetLang,
@@ -753,7 +766,7 @@ export default function RecordPage() {
         translations={translator.translations}
         merges={translator.merges}
         suppressedIds={translator.suppressedIds}
-        filteredIds={translator.filteredIds}
+        filteredIds={liveHiddenIds}
         errors={translator.errors}
         pending={translator.pending}
         onRetry={translator.retry}

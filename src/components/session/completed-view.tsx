@@ -24,6 +24,12 @@ export interface CompletedSession {
   /** Segment ids the server filtered as noise / off-language. Hidden here too,
    *  matching the live transcript and persistence (which already drop them). */
   filteredIds?: Set<string>;
+  /** Segment ids the model flagged as an off-language transliteration. Hidden
+   *  from this just-recorded view (transcript AND the AI summary built from it),
+   *  matching the live transcript. Unlike `filteredIds` these are still PERSISTED
+   *  source-only, so a reloaded history view shows them and nothing is lost — the
+   *  suppression is non-destructive. Runtime-only (absent on reloaded sessions). */
+  offLanguageIds?: Set<string>;
 }
 
 interface CompletedViewProps {
@@ -48,7 +54,12 @@ export function CompletedView({
   const normalizedSegments = useMemo(
     () =>
       session.segments
-        .filter((s) => s.isFinal && !session.filteredIds?.has(s.id))
+        .filter(
+          (s) =>
+            s.isFinal &&
+            !session.filteredIds?.has(s.id) &&
+            !session.offLanguageIds?.has(s.id)
+        )
         .map((s) => {
           const merge = session.merges?.[s.id];
           return {
@@ -64,7 +75,13 @@ export function CompletedView({
               : {}),
           };
         }),
-    [session.segments, session.translations, session.merges, session.filteredIds]
+    [
+      session.segments,
+      session.translations,
+      session.merges,
+      session.filteredIds,
+      session.offLanguageIds,
+    ]
   );
 
   const handleCopy = async () => {

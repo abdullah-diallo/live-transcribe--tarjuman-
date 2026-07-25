@@ -36,10 +36,22 @@ export interface UseTranslatorReturn {
   /** Segment ids that were merged INTO another segment — hide these from rendering. */
   suppressedIds: Set<string>;
   /**
-   * Segment ids the server filtered as noise (too short, off-language).
+   * Segment ids the server filtered as noise (too short, off-language script).
    * These segments don't render at all and are skipped on persistence.
    */
   filteredIds: Set<string>;
+  /**
+   * Segment ids the model flagged as a phonetic transliteration of a DIFFERENT
+   * language (the source-forced STT rendering foreign speech into source script,
+   * e.g. English "okay so basically" → "اوكي سو بيسكلي"). These are HIDDEN from
+   * the LIVE recording transcript only — they are still PERSISTED source-only
+   * and appear in the saved session, so if the model ever misfires on real
+   * source-language speech, nothing is lost: the segment stays in the durable
+   * record and is fully recoverable. Suppression is therefore NON-destructive,
+   * which is why no confidence gate is needed. Distinct from `filteredIds`,
+   * which drops deterministically-detected noise from persistence too.
+   */
+  offLanguageIds: Set<string>;
   /**
    * Segment ids whose FINAL (enriched) translation has landed. Distinct from
    * `translations[id]` being defined, which is now true mid-stream on the first
@@ -71,6 +83,7 @@ export function useTranslator({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [merges, setMerges] = useState<Record<string, MergeRecord>>({});
   const [filteredIds, setFilteredIds] = useState<Set<string>>(new Set());
+  const [offLanguageIds, setOffLanguageIds] = useState<Set<string>>(new Set());
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
   const inFlightRef = useRef<Set<string>>(new Set());
   const [, forcePendingRender] = useState(0);
@@ -84,6 +97,7 @@ export function useTranslator({
     setErrors({});
     setMerges({});
     setFilteredIds(new Set());
+    setOffLanguageIds(new Set());
     setCompletedIds(new Set());
     inFlightRef.current = new Set();
     forcePendingRender((n) => n + 1);
@@ -184,6 +198,7 @@ export function useTranslator({
           translatedText?: string;
           merge?: MergeRecord;
           filtered?: boolean;
+          offLanguage?: boolean;
           error?: string;
         }) => {
           if (data.error) {
@@ -198,6 +213,29 @@ export function useTranslator({
               next.add(seg.id);
               return next;
             });
+            markCompleted();
+            return;
+          }
+          if (data.offLanguage) {
+            // The model positively identified this segment as a phonetic
+            // transliteration of a DIFFERENT language (it had to recognize the
+            // foreign words to fire this — not merely fail to translate). HIDE it
+            // from the LIVE transcript, but keep a blank translation so the
+            // segment still PERSISTS source-only to the saved session. Suppression
+            // is therefore NON-destructive: a model misfire on real source-
+            // language speech loses nothing (the sentence stays in the durable
+            // record + summary, fully recoverable) — so no confidence gate is
+            // needed. The deterministic noise filter (`filtered`) remains the
+            // only path that drops a segment from persistence entirely.
+            setOffLanguageIds((prev) => {
+              if (prev.has(seg.id)) return prev;
+              const next = new Set(prev);
+              next.add(seg.id);
+              return next;
+            });
+            setTranslations((prev) =>
+              prev[seg.id] === "" ? prev : { ...prev, [seg.id]: "" }
+            );
             markCompleted();
             return;
           }
@@ -427,6 +465,7 @@ export function useTranslator({
     merges,
     suppressedIds,
     filteredIds,
+    offLanguageIds,
     completedIds,
     reset,
     retry,

@@ -250,6 +250,21 @@ ${text}`;
 // as the translation and skip the merge silently.
 const MERGE_MARKER = "<<<MERGE>>>";
 
+// Off-language marker. The model emits this — and only this — when it recognizes
+// the segment as a phonetic transliteration of coherent speech in a DIFFERENT
+// language than the source (English/French/etc. spoken near the mic, rendered by
+// the source-forced STT into source script). It can only appear at the very
+// start of the output; the stream parser detects it up front, streams nothing,
+// and signals `offLanguage: true` in the trailer so the client suppresses the
+// phantom segment. Deliberately distinct from the plain empty-string verdict
+// (untranslatable / unsure), which stays fail-open and keeps the source card.
+const OFFLANG_MARKER = "<<<OFFLANG>>>";
+
+// Chars held back from the streamed prose so a control marker split across two
+// SSE deltas can never partially flash on screen. Covers the longer of the two
+// markers (<<<OFFLANG>>>), so neither can leak a fragment.
+const HOLD_BACK = Math.max(MERGE_MARKER.length, OFFLANG_MARKER.length);
+
 // Separates the streamed plain-translation text from the final metadata JSON
 // trailer (enriched text + merge/filtered/error). The U+241E control char can
 // never appear in translated prose, so the client splits on it safely. MUST
@@ -322,7 +337,7 @@ const SYSTEM_PROMPT = `You are a translation engine for a live transcription app
 - Input may be a fragment or mid-sentence — this is a live transcription app, so the speaker hasn't finished. Translate fragments as fragments. If a word is cut off mid-syllable, translate what's there and end with "..." rather than commenting on the cut.
 - If the input is already in the target language, output it unchanged.
 - If the input is empty, gibberish, or genuinely untranslatable, output an empty string (do not invent translations of noise, do not explain why).
-- OFF-LANGUAGE AUDIO: the STT engine is FORCED to the source language, so speech in any other language arrives as a phonetic transliteration into the source script — it looks like source-language words but reads as incoherent nonsense (e.g. English "okay so basically" arriving as "اوكي سو بيسكلي"). If the text is clearly such a transliteration of non-source speech rather than real source-language content, output an empty string. Do NOT attempt a best-effort translation of transliterated noise.
+- OFF-LANGUAGE AUDIO: the STT engine is FORCED to the source language, so speech in a DIFFERENT language arrives as a phonetic transliteration into the source script — it looks like source-language letters but is actually another language's words spelled out phonetically (e.g. English "okay so basically" arriving as "اوكي سو بيسكلي", or French "d'accord" as "داكور"). When you can RECOGNIZE that the text is a phonetic transliteration of coherent speech in a specific OTHER language — i.e. you can read the foreign words through the source-script spelling — output EXACTLY this marker on its own line and NOTHING else: <<<OFFLANG>>>. Use the marker ONLY when you are certain it is a different language; NEVER for unusual, dialectal, colloquial, archaic, or merely unfamiliar source-language content, and never for proper nouns/names. If you are at all unsure whether it is off-language or just atypical source-language speech, do NOT use the marker — output an empty string instead (which safely keeps the original on screen). Never attempt a best-effort translation of transliterated noise.
 - The Islamic-terminology rules below apply REGARDLESS of source language. They fire whenever Islamic content is present — Arabic→English, English→Urdu, Turkish→French, etc.
 
 ## Context handling
@@ -564,6 +579,8 @@ export async function POST(req: NextRequest) {
       let rawText = ""; // full accumulated model output (incl. any MERGE block)
       let emitted = 0; // chars of pre-MERGE text already streamed to the client
       let mergeSeen = false;
+      let offLang = false; // the model emitted the <<<OFFLANG>>> marker
+      let offLangDecided = false; // resolved whether the output starts with it
 
       const emitMeta = (meta: Record<string, unknown>) => {
         controller.enqueue(encoder.encode(META_SENTINEL + JSON.stringify(meta)));
@@ -600,12 +617,31 @@ export async function POST(req: NextRequest) {
               typeof evt.delta.text === "string"
             ) {
               rawText += evt.delta.text;
+              // Off-language marker detection. The model emits <<<OFFLANG>>> to
+              // flag a foreign-language transliteration — normally as its sole
+              // output. Detect it ANYWHERE (defense-in-depth), and while the head
+              // is still an incomplete prefix of the marker, hold back so it can
+              // never partially flash on screen. Once seen, stream nothing more.
+              if (!offLang && rawText.includes(OFFLANG_MARKER)) {
+                offLang = true;
+                offLangDecided = true;
+              }
+              if (!offLangDecided) {
+                const head = rawText.trimStart();
+                if (OFFLANG_MARKER.startsWith(head)) {
+                  continue; // still an ambiguous marker prefix at the start — wait
+                } else {
+                  offLangDecided = true; // definitely normal output — stream it
+                }
+              }
+              if (offLang) continue; // suppress ALL output for an off-language hit
               if (mergeSeen) continue;
               const markerIdx = rawText.indexOf(MERGE_MARKER);
               if (markerIdx === -1) {
-                // Hold back the last MERGE_MARKER.length chars so a marker
-                // split across two deltas is never partially shown.
-                const safeEnd = Math.max(0, rawText.length - MERGE_MARKER.length);
+                // Hold back the last HOLD_BACK chars so a MERGE or OFFLANG marker
+                // split across two deltas is never partially shown (HOLD_BACK
+                // covers the longer of the two markers).
+                const safeEnd = Math.max(0, rawText.length - HOLD_BACK);
                 if (safeEnd > emitted) {
                   controller.enqueue(encoder.encode(rawText.slice(emitted, safeEnd)));
                   emitted = safeEnd;
@@ -619,6 +655,30 @@ export async function POST(req: NextRequest) {
               }
             }
           }
+        }
+
+        // Off-language: the model positively recognized a foreign-language
+        // transliteration. Stream nothing; flag the trailer. The client HIDES the
+        // segment from the LIVE transcript only (its offLanguageIds set) but STILL
+        // PERSISTS it source-only — persistence keys on filteredIds, which this
+        // does NOT set. Suppression is therefore NON-destructive: a model misfire
+        // on real source-language speech loses nothing (the segment stays in the
+        // saved session, fully recoverable), which is why NO confidence gate is
+        // needed. Do NOT route this into filteredIds or re-add a confidence gate:
+        // either would make a misfire drop legitimate speech (the fail-closed bug
+        // this design exists to avoid).
+        if (offLang) {
+          emitMeta({ translatedText: "", offLanguage: true });
+          controller.close();
+          return;
+        }
+        // Degenerate: the whole output was only a PARTIAL "<<<OFFLANG>>>" prefix
+        // (e.g. a truncated stream). Never render the raw marker fragment — treat
+        // it as the empty verdict (fail-open: keep the Deepgram source).
+        if (!offLangDecided) {
+          emitMeta({ translatedText: "" });
+          controller.close();
+          return;
         }
 
         // Flush any held-back tail of the pre-MERGE text.
