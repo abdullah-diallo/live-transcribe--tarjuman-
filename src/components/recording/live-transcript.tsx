@@ -102,6 +102,10 @@ interface PairedRowProps {
   error: string | undefined;
   sourceRtl: boolean;
   targetRtl: boolean;
+  /** BCP-47/ISO codes — set as `lang` so the browser picks the right glyph
+   *  forms (Japanese vs Chinese Han) and language-correct line breaking. */
+  sourceLang: string;
+  targetLang: string;
   sourceFontSize: number;
   targetFontSize: number;
   showSpeakerBadges: boolean;
@@ -116,6 +120,8 @@ const PairedSegmentRow = memo(function PairedSegmentRow({
   error,
   sourceRtl,
   targetRtl,
+  sourceLang,
+  targetLang,
   sourceFontSize,
   targetFontSize,
   showSpeakerBadges,
@@ -127,6 +133,7 @@ const PairedSegmentRow = memo(function PairedSegmentRow({
       <AnimateIn variant="source">
         <div
           dir={sourceRtl ? "rtl" : "ltr"}
+          lang={sourceLang}
           className="px-4 py-3 rounded-2xl mb-[6px]"
           style={{
             background: `${sc}14`,
@@ -161,6 +168,7 @@ const PairedSegmentRow = memo(function PairedSegmentRow({
         <AnimateIn variant="translation">
           <div
             dir={targetRtl ? "rtl" : "ltr"}
+          lang={targetLang}
             className="px-4 py-3 rounded-2xl"
             style={{
               background: `${COLORS.accent}10`,
@@ -323,6 +331,8 @@ export function LiveTranscript({
               error={errors?.[seg.id]}
               sourceRtl={sourceRtl}
               targetRtl={targetRtl}
+              sourceLang={sourceLang}
+              targetLang={targetLang ?? "en"}
               sourceFontSize={sourceFontSize}
               targetFontSize={targetFontSize}
               showSpeakerBadges={showSpeakerBadges}
@@ -334,6 +344,7 @@ export function LiveTranscript({
         {interimText && (
           <div
             dir={sourceRtl ? "rtl" : "ltr"}
+          lang={sourceLang}
             className="px-4 py-3 rounded-2xl opacity-50"
             style={{
               background: `${COLORS.blue}0D`,

@@ -285,6 +285,7 @@ export function SessionBody({
           </div>
           <div
             dir={summaryRtl ? "rtl" : "ltr"}
+          lang={summaryLang}
             className="summary-markdown"
             style={{
               color: COLORS.w,
@@ -445,6 +446,7 @@ export function SessionBody({
               <div key={seg.id} className="mb-4">
                 <div
                   dir={sourceRtl ? "rtl" : "ltr"}
+          lang={sourceLang}
                   className="px-4 py-3 rounded-2xl mb-[6px]"
                   style={{
                     background: `${COLORS.blue}14`,
@@ -467,6 +469,7 @@ export function SessionBody({
                 {translatedForDisplay && (
                   <div
                     dir={targetRtl ? "rtl" : "ltr"}
+          lang={targetLang}
                     className="px-4 py-3 rounded-2xl"
                     style={{
                       background: `${COLORS.accent}10`,
