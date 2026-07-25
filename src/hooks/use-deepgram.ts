@@ -102,6 +102,43 @@ type DeepgramMessage =
 const FINAL_CONFIDENCE_THRESHOLD = 0.45;
 
 /**
+ * Per-language overrides for the final-confidence floor.
+ *
+ * 0.45 was tuned on ARABIC, whose nova-3 model is unusually strong — it scores
+ * 0.95–1.00 even on far-field PA capture. Other nova-3 monolingual models score
+ * far lower on transcriptions that are perfectly CORRECT, so applying Arabic's
+ * floor to them deletes real speech. Measured live against Deepgram (2026-07-25)
+ * with far-field-degraded audio: Hungarian came back at 0.30–0.42 — i.e. BELOW
+ * the floor, so 100% of a Hungarian lecture was dropped and the user saw an
+ * empty screen with no explanation. Polish (0.69) / Danish (0.70) / Ukrainian
+ * (0.55 degraded) sit close enough to the floor to lose segments too.
+ *
+ * Lowering the floor for these languages trades a little more noise for not
+ * silently losing the entire transcript — and the downstream defenses (the
+ * repeated-token filter and the off-language detector in /api/translate) still
+ * apply. Languages not listed here keep the 0.45 default.
+ */
+const CONFIDENCE_FLOOR_BY_LANG: Record<string, number> = {
+  hu: 0.2,
+  vi: 0.3,
+  da: 0.3,
+  pl: 0.3,
+  uk: 0.3,
+  he: 0.35,
+  el: 0.35,
+  id: 0.35,
+};
+
+/** Final-confidence floor for the session's source language. */
+function confidenceFloorFor(lang: string | undefined): number {
+  if (!lang) return FINAL_CONFIDENCE_THRESHOLD;
+  return (
+    CONFIDENCE_FLOOR_BY_LANG[lang.toLowerCase().split("-")[0]] ??
+    FINAL_CONFIDENCE_THRESHOLD
+  );
+}
+
+/**
  * Don't paint interim text below this confidence. Interims are partial
  * hypotheses so they score lower than finals — this floor is deliberately
  * lenient. It exists so off-language speech (which Deepgram, forced to the
@@ -479,7 +516,9 @@ export function useDeepgram({
         if (msg.is_final) {
           const alt = msg.channel.alternatives[0];
           const confidence = alt?.confidence ?? 0;
-          if (confidence < FINAL_CONFIDENCE_THRESHOLD) {
+          // Floor is per-language: Arabic's model scores far higher than e.g.
+          // Hungarian's on identical audio quality (see CONFIDENCE_FLOOR_BY_LANG).
+          if (confidence < confidenceFloorFor(sourceLanguage)) {
             dbg(
               `[deepgram] dropped low-confidence final (${confidence.toFixed(
                 2

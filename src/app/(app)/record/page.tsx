@@ -838,6 +838,16 @@ export default function RecordPage() {
           onChange={({ sourceLang: s, targetLang: t }) => {
             setSourceLang(s);
             setTargetLang(t);
+            // Persist the pair. The effect above HYDRATES defaultSourceLanguage
+            // / defaultTargetLanguage, but nothing ever WROTE them — so every
+            // visit fell back to the ar→en mount default. A Turkish (or any
+            // non-Arabic) speaker had to re-pick their language every single
+            // time, and if they forgot, their speech was captured by an
+            // Arabic-forced STT and came back as transliterated nonsense.
+            void updatePrefs({
+              defaultSourceLanguage: s,
+              defaultTargetLanguage: t,
+            });
           }}
         />
 
