@@ -8,6 +8,7 @@ import {
   RECONNECT_BACKOFF,
 } from "@/lib/constants";
 import { isOffLanguageScript } from "@/lib/script";
+import { getLangName } from "@/lib/utils";
 
 // Connection/transcript debug logs — DEV ONLY. In production this is a no-op so
 // transcript text is never written to the browser console (privacy) and the
@@ -49,6 +50,15 @@ export interface UseDeepgramReturn {
   connectionState: ConnectionState;
   error: string | null;
   reconnectAttempt: number;
+  /**
+   * Non-fatal warning: Deepgram IS returning speech, but we are discarding all
+   * of it as too-low-confidence. The connection is healthy, so nothing else in
+   * the UI would say anything — the user would just watch a timer run against
+   * an empty transcript. Almost always means the selected SOURCE LANGUAGE
+   * doesn't match what is being spoken (or the audio is too far/noisy for that
+   * language's model). Null when things are fine.
+   */
+  lowConfidenceWarning: string | null;
   resetTranscript: () => void;
 }
 
@@ -129,6 +139,13 @@ const CONFIDENCE_FLOOR_BY_LANG: Record<string, number> = {
   id: 0.35,
 };
 
+/**
+ * How many consecutive discarded finals before we warn the user. Low enough to
+ * catch a wrong source language within a sentence or two, high enough that a
+ * couple of noisy segments in a healthy session stay silent.
+ */
+const LOW_CONFIDENCE_WARN_AFTER = 4;
+
 /** Final-confidence floor for the session's source language. */
 function confidenceFloorFor(lang: string | undefined): number {
   if (!lang) return FINAL_CONFIDENCE_THRESHOLD;
@@ -202,6 +219,10 @@ export function useDeepgram({
     useState<ConnectionState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
+  // Consecutive finals discarded by the confidence floor with no kept final in
+  // between. Deepgram is hearing speech; we're throwing all of it away.
+  const [lowConfidenceWarning, setLowConfidenceWarning] = useState<string | null>(null);
+  const consecutiveLowConfRef = useRef(0);
 
   // Convex Auth token, attached as Bearer to the /api/deepgram credential
   // fetch so the route can authorize + rate-limit the user. Kept in a ref so a
@@ -260,6 +281,8 @@ export function useDeepgram({
       // starts fresh. Keeping it across stop/start would carry a stale lock
       // from a previous speaker into a new recording.
       lockedSpeakerRef.current = null;
+      consecutiveLowConfRef.current = 0;
+      setLowConfidenceWarning(null);
       speakerDurationsRef.current = new Map();
       sessionStartRef.current = null;
       speakerRemapRef.current = new Map();
@@ -519,6 +542,17 @@ export function useDeepgram({
           // Floor is per-language: Arabic's model scores far higher than e.g.
           // Hungarian's on identical audio quality (see CONFIDENCE_FLOOR_BY_LANG).
           if (confidence < confidenceFloorFor(sourceLanguage)) {
+            // Deepgram heard speech but we're discarding it. If this keeps
+            // happening the transcript stays empty while every other indicator
+            // says "recording fine" — so after a few in a row, tell the user.
+            consecutiveLowConfRef.current += 1;
+            if (consecutiveLowConfRef.current >= LOW_CONFIDENCE_WARN_AFTER) {
+              setLowConfidenceWarning(
+                `We can hear speech but can't transcribe it as ${getLangName(
+                  sourceLanguage
+                )}. Check the source language is right, or move closer to the speaker.`
+              );
+            }
             dbg(
               `[deepgram] dropped low-confidence final (${confidence.toFixed(
                 2
@@ -675,6 +709,10 @@ export function useDeepgram({
             speaker = display;
           }
 
+          // A final survived — the pipeline is working; clear any warning.
+          consecutiveLowConfRef.current = 0;
+          setLowConfidenceWarning((prev) => (prev === null ? prev : null));
+
           setSegments((prev) => [
             ...prev,
             {
@@ -816,6 +854,7 @@ export function useDeepgram({
     connectionState,
     error,
     reconnectAttempt,
+    lowConfidenceWarning,
     resetTranscript,
   };
 }

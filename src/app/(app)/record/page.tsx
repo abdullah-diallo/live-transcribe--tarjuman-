@@ -765,6 +765,7 @@ export default function RecordPage() {
         transcriptionError={deepgram.error}
         translations={translator.translations}
         merges={translator.merges}
+        lowConfidenceWarning={deepgram.lowConfidenceWarning}
         suppressedIds={translator.suppressedIds}
         filteredIds={liveHiddenIds}
         errors={translator.errors}

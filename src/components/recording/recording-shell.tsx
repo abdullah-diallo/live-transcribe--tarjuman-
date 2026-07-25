@@ -37,6 +37,8 @@ interface RecordingShellProps {
   suppressedIds?: Set<string>;
   /** Segments filtered as noise server-side (single-word / off-language). */
   filteredIds?: Set<string>;
+  /** Non-fatal: hearing speech but discarding it all (usually wrong source language). */
+  lowConfidenceWarning?: string | null;
   /** Segment id → translation error (failed after retries). */
   errors?: Record<string, string>;
   /** Segment ids whose translation is currently in flight. */
@@ -74,6 +76,7 @@ export function RecordingShell({
   suppressedIds,
   filteredIds,
   errors,
+  lowConfidenceWarning,
   pending,
   onRetry,
   transcriptLayout,
@@ -324,6 +327,28 @@ export function RecordingShell({
             Transcription unavailable
           </div>
           <div style={{ color: COLORS.t2 }}>{transcriptionError}</div>
+        </div>
+      )}
+
+      {/* Non-fatal: Deepgram IS returning speech but every final is below the
+          confidence floor, so the transcript stays empty while the connection
+          indicator stays green. Without this the user watches a timer run
+          against a blank screen with no idea why — almost always the source
+          language doesn't match what's being spoken. */}
+      {!isTranscriptionError && lowConfidenceWarning && (
+        <div
+          className="mx-5 mt-3 px-4 py-3 rounded-2xl text-[12px]"
+          style={{
+            background: COLORS.amberSoft,
+            border: `1px solid ${COLORS.amber}55`,
+            color: COLORS.w,
+          }}
+          role="status"
+        >
+          <div className="section-label mb-1" style={{ color: COLORS.amber }}>
+            Not picking up the language
+          </div>
+          <div style={{ color: COLORS.t2 }}>{lowConfidenceWarning}</div>
         </div>
       )}
 
