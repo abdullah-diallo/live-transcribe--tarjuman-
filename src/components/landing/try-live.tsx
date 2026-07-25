@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { COLORS } from "@/lib/constants";
+import { looksLikeMetaCommentary } from "@/lib/translation-guard";
 
 const AuthModal = dynamic(
   () => import("@/components/auth/auth-modal").then((m) => m.AuthModal),
@@ -113,6 +114,10 @@ export function TryLive() {
   const recRef = useRef<SpeechRecognitionLike | null>(null);
   const activeRef = useRef(false); // true while we *want* recognition running
   const segIdRef = useRef(0);
+  // Bumped on every start(). Segment ids restart at 0 each session, so without
+  // this a translation still in flight from a previous run would resolve onto
+  // an unrelated segment of the new one.
+  const sessionRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   // Web Speech is browser/network-dependent and fails in many quiet ways
@@ -151,7 +156,13 @@ export function TryLive() {
     }
     const rec = recRef.current;
     if (rec) {
+      // Detach ALL handlers before stopping. rec.stop() is asynchronous and
+      // Chrome commonly delivers a trailing result after it — with onresult
+      // still bound that would push a segment into the NEXT session and spend
+      // trial budget on speech the visitor already ended.
       rec.onend = null;
+      rec.onresult = null;
+      rec.onerror = null;
       try {
         rec.stop();
       } catch {
@@ -165,38 +176,52 @@ export function TryLive() {
 
   const translate = useCallback(
     async (id: number, text: string, src: string, tgt: string) => {
+      const session = sessionRef.current;
+      // A response that lands after the visitor restarted the trial belongs to
+      // a dead session — ids restart at 0, so applying it would overwrite an
+      // unrelated segment.
+      const isStale = () => sessionRef.current !== session;
+      const markFailed = () => {
+        if (isStale()) return;
+        setSegs((prev) =>
+          prev.map((s) => (s.id === id ? { ...s, translating: false, error: true } : s))
+        );
+      };
       try {
         const r = await fetch("/api/trial/translate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text, source: src, target: tgt }),
+          // Without a client deadline a stalled request leaves the card on
+          // "…translating" forever (the route only bounds its own upstream call).
+          signal: AbortSignal.timeout(20_000),
         });
         const data = (await r.json().catch(() => ({}))) as {
           translatedText?: string;
           error?: string;
         };
+        if (isStale()) return;
         if (!r.ok) {
           // Out of trial budget → end gracefully with the signup nudge.
           if (r.status === 429 || r.status === 503) {
             setHint(data.error ?? "Trial limit reached.");
             stop("ended");
           }
-          setSegs((prev) =>
-            prev.map((s) => (s.id === id ? { ...s, translating: false, error: true } : s))
-          );
+          markFailed();
           return;
         }
+        // Client-side backstop, mirroring the app (which guards on BOTH sides):
+        // model meta-commentary must never render. The server blanks it too;
+        // this covers a stale deploy or an edge-cached route.
+        const incoming = data.translatedText ?? "";
+        const safe = looksLikeMetaCommentary(incoming) ? "" : incoming;
         setSegs((prev) =>
           prev.map((s) =>
-            s.id === id
-              ? { ...s, translating: false, translation: data.translatedText ?? "" }
-              : s
+            s.id === id ? { ...s, translating: false, translation: safe } : s
           )
         );
       } catch {
-        setSegs((prev) =>
-          prev.map((s) => (s.id === id ? { ...s, translating: false, error: true } : s))
-        );
+        markFailed();
       }
     },
     [stop]
@@ -216,6 +241,8 @@ export function TryLive() {
     setSrError(null);
     heardRef.current = false;
     segIdRef.current = 0;
+    // Invalidate any translation still in flight from a previous run.
+    sessionRef.current += 1;
 
     const rec = new SR();
     rec.lang = speak.bcp;
@@ -276,18 +303,34 @@ export function TryLive() {
       }
     };
 
+    // Chrome ends recognition periodically; restart (after a beat, to dodge the
+    // "recognition has already started" race) while still active. A throw here
+    // used to be swallowed on the assumption that "the next onend recovers" —
+    // but if start() never succeeds there IS no next onend, so recognition died
+    // permanently while the UI still said "Listening" and nothing transcribed.
+    // Retry with backoff, then surface it instead of hanging silently.
+    let restartAttempt = 0;
     rec.onend = () => {
-      // Chrome ends recognition periodically; restart (after a beat, to dodge
-      // the "recognition has already started" race) while still active.
       if (!activeRef.current) return;
-      setTimeout(() => {
+      // Drop any un-finalized interim from the run that just ended so stale
+      // ghost text doesn't linger beneath the new one.
+      setInterim("");
+      const tryRestart = () => {
         if (!activeRef.current) return;
         try {
           rec.start();
+          restartAttempt = 0;
         } catch {
-          /* transient InvalidStateError — the next onend/tick recovers */
+          restartAttempt += 1;
+          if (restartAttempt > 4) {
+            setSrError("Speech recognition stopped unexpectedly.");
+            stop("error");
+            return;
+          }
+          setTimeout(tryRestart, 150 * 2 ** restartAttempt);
         }
-      }, 150);
+      };
+      setTimeout(tryRestart, 150);
     };
 
     recRef.current = rec;
@@ -505,7 +548,14 @@ export function TryLive() {
                 <span style={{ color: COLORS.t4 }}>
                   (translation unavailable)
                 </span>
-              ) : null}
+              ) : (
+                // Resolved, but the translation came back EMPTY — the model
+                // judged the audio untranslatable (filler, noise, or speech in
+                // a language other than the selected source). This branch used
+                // to render nothing at all, leaving a visibly blank card that
+                // read as "the translation is broken".
+                <span style={{ color: COLORS.t4 }}>(no translation)</span>
+              )}
             </div>
           </div>
         ))}

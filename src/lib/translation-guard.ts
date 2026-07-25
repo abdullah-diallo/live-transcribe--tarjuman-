@@ -36,6 +36,18 @@ const COMMENTARY_MARKERS: RegExp[] = [
   /\bas an AI\b/i,
   /\b(?:large )?language model\b/i,
   /\btranslation model\b/i,
+  // Chat-assistant persona — the model ANSWERING the speaker instead of
+  // translating them. Observed on the landing trial when the segment was sent
+  // as a bare user turn: "I don't have a name. I'm an AI assistant designed to
+  // translate…" and "I'm here to help with translations. Please provide a text
+  // segment…". The existing "as an AI" marker does not match "I'm an AI", so
+  // these leaks rendered verbatim. Task framing now prevents them upstream;
+  // these are the backstop. All are phrasings a translation of khutbah/lecture
+  // speech would never contain.
+  /\bI(?:['’]m| am) an AI\b/i,
+  /\bAI (?:assistant|model)\b/i,
+  /\bI(?:['’]m| am) here to help with translat/i,
+  /\bplease provide (?:a|the) (?:text|segment|sentence|phrase)\b/i,
   /\bI recognize this as\b/i,
   /\bI (?:cannot|can'?t|am unable to|'?m unable to) (?:translate|render)\b/i,
   /\bcannot be (?:meaningfully )?translated\b/i,

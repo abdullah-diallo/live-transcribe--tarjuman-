@@ -10,12 +10,16 @@
  *   drift.
  *
  * Why this is long:
- *   Anthropic's prompt-cache thresholds are 1024 tokens (Sonnet) and 2048
- *   tokens (Haiku). A short prompt would be re-billed at full price every
- *   call. By making the rules+examples block comfortably exceed both
- *   thresholds, every recording session after the first call pays roughly
- *   1/10th the input cost — and the prompt is *better* for it because the
- *   model has more in-context examples and structured guidance.
+ *   Anthropic's MINIMUM CACHEABLE PREFIX is 1024 tokens (Sonnet 4.5-era),
+ *   2048 (Sonnet 4.6), and 4096 for Haiku 4.5 — the model this route uses by
+ *   default. Below that, `cache_control` silently does nothing (no error, just
+ *   cache_creation_input_tokens: 0) and every call is re-billed at full price.
+ *   Measured 2026-07-25 via count_tokens on claude-haiku-4-5: the composed
+ *   system prompt is ~5.3k tokens, i.e. ~1.2k above the 4096 floor. That
+ *   margin is the whole reason caching pays off (~1/10th input cost after the
+ *   first call), so do NOT trim this block below ~4.2k tokens without
+ *   re-measuring — and note the same block is now shared with the landing
+ *   trial (@/lib/translation-prompt), which relies on the same threshold.
  */
 
 export const ISLAMIC_TERMINOLOGY_RULES = `

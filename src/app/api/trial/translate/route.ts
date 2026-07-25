@@ -1,7 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ISLAMIC_TERMINOLOGY_RULES } from "@/lib/islamic-terminology";
+import {
+  ISLAMIC_TERMINOLOGY_RULES,
+  ISLAMIC_FEW_SHOT_EXAMPLES,
+} from "@/lib/islamic-terminology";
 import { LANGUAGES } from "@/lib/constants";
+import { verifyAndEnrich } from "@/lib/sunnah";
+import { verifyAndEnrichQuran } from "@/lib/quran";
 import { looksLikeMetaCommentary } from "@/lib/translation-guard";
+import {
+  OFFLANG_MARKER,
+  TRANSLATION_CORE_PROMPT,
+  buildTranslationUserMessage,
+} from "@/lib/translation-prompt";
 
 /**
  * Anonymous translation for the landing-page "Try it live" trial — the only
@@ -125,10 +135,19 @@ export async function POST(req: NextRequest) {
   const targetName = LANG_NAME.get(target)!;
   const sourceName = source ? LANG_NAME.get(source) ?? "the source language" : "the source language";
 
-  const system = `You translate short spoken-transcript segments from ${sourceName} into ${targetName}. Output ONLY the translation — no preamble, no quotation marks, no notes, and NEVER address the user or describe the input. If the input is filler, gibberish, or untranslatable noise, output an empty string (do not explain why). OFF-LANGUAGE: the transcriber is set to ${sourceName}, so speech in another language arrives as a phonetic transliteration into ${sourceName} that reads as incoherent nonsense — if the text is clearly such a transliteration rather than real ${sourceName} content, output an empty string. Do not attempt a best-effort translation of transliterated noise.\n\n${ISLAMIC_TERMINOLOGY_RULES}`;
+  // IDENTICAL prompt to the authenticated app (/api/translate): same engine
+  // persona, same general rules, same Islamic terminology + few-shot examples.
+  // Only the app's context/merge protocol is omitted — the trial sends no prior
+  // context and cannot render a merge. Built from @/lib/translation-prompt so
+  // the two paths can never silently drift apart again.
+  const system = `${TRANSLATION_CORE_PROMPT}
+
+${ISLAMIC_TERMINOLOGY_RULES}
+
+${ISLAMIC_FEW_SHOT_EXAMPLES}`;
 
   try {
-    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+    const callAnthropic = () => fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -137,9 +156,31 @@ export async function POST(req: NextRequest) {
       },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 400,
-        system,
-        messages: [{ role: "user", content: text }],
+        // 500 matches the app's Haiku budget. A citation-heavy Arabic/Urdu
+        // rendering of a 280-char segment can approach 400 tokens; truncating
+        // mid-sentence in a public demo reads as broken.
+        max_tokens: 500,
+        // Cache the prompt prefix. The system prompt is now the app's full
+        // prompt (~6k tokens); without caching that would multiply the cost of
+        // every anonymous trial call. With it, repeat calls inside the 5-minute
+        // window bill the prefix at ~10% — the same lever /api/translate uses.
+        system: [
+          { type: "text", text: system, cache_control: { type: "ephemeral" } },
+        ],
+        // Frame the segment as a translation TASK. Sending the raw spoken text
+        // as a BARE user turn is what made the model answer the visitor
+        // conversationally ("I'm here to help with translations…") instead of
+        // translating it. Shared with the app so both frame identically.
+        messages: [
+          {
+            role: "user",
+            content: buildTranslationUserMessage({
+              text,
+              sourceName,
+              targetName,
+            }),
+          },
+        ],
       }),
       cache: "no-store",
       // Without a timeout a stalled Anthropic connection hangs for the whole
@@ -148,13 +189,36 @@ export async function POST(req: NextRequest) {
       // the generic 502 the client already handles.
       signal: AbortSignal.timeout(15_000),
     });
+
+    // One retry with a short backoff on a transient upstream blip (429 rate
+    // limit / 5xx overloaded), mirroring /api/translate: a single Anthropic
+    // hiccup must not permanently break a demo segment. A timeout/abort throws
+    // instead and is deliberately NOT retried — it would double the wait while
+    // the visitor's 60s trial clock runs.
+    let resp = await callAnthropic();
+    if (resp.status === 429 || resp.status >= 500) {
+      await new Promise((r) => setTimeout(r, 400));
+      resp = await callAnthropic();
+    }
     if (!resp.ok) {
       console.error("trial translate upstream error", resp.status);
       return NextResponse.json({ error: "Translation hiccup — try again." }, { status: 502 });
     }
     const data = await resp.json();
-    const raw =
-      typeof data?.content?.[0]?.text === "string" ? data.content[0].text.trim() : "";
+    // Take the first TEXT block rather than assuming index 0 — if the response
+    // ever leads with a non-text block, index 0 would yield undefined and the
+    // visitor would silently get a blank translation.
+    const blocks: unknown = data?.content;
+    const firstText = Array.isArray(blocks)
+      ? blocks.find(
+          (b): b is { type: string; text: string } =>
+            !!b &&
+            typeof b === "object" &&
+            (b as { type?: unknown }).type === "text" &&
+            typeof (b as { text?: unknown }).text === "string"
+        )?.text
+      : undefined;
+    const raw = (firstText ?? "").trim();
     // Same hard guard as the authenticated /api/translate path: the model must
     // NEVER surface first-person meta-commentary about the input ("I'm not
     // recognizing this as coherent Arabic…"). It usually obeys the prompt, but
@@ -162,7 +226,34 @@ export async function POST(req: NextRequest) {
     // and this is the public landing "Try it live" demo, a visitor's first
     // impression. If it looks like commentary, blank it (the trial has no source
     // card to fall back to, so a blank translation is the correct outcome).
-    const translatedText = looksLikeMetaCommentary(raw) ? "" : raw;
+    // <<<OFFLANG>>> is a CONTROL TOKEN from the shared prompt (the model emits
+    // it for foreign-language speech). The app parses it out of the stream; the
+    // trial has no marker parsing, so blank it here — it must never reach a
+    // visitor's screen.
+    // Tolerant marker test: a truncated/mangled emission ("<<OFFLANG", "<OFFLANG>>")
+    // must not slip through as visible text. No legitimate translation contains
+    // this token in any form, so matching loosely is safe here.
+    const looksOffLang =
+      raw.includes(OFFLANG_MARKER) || /<{1,3}\s*OFFLANG/i.test(raw);
+    if (looksOffLang || looksLikeMetaCommentary(raw)) {
+      return NextResponse.json({ translatedText: "" });
+    }
+
+    // Citation verification — the terminology rules PROMISE the model that its
+    // Quran/hadith references are checked server-side after it responds, and the
+    // app delivers on that (/api/translate runs the same two calls). Without it
+    // the public demo could show a hallucinated hadith number, which for this
+    // audience is worse than showing no citation at all. Both helpers are
+    // key-free, in-memory cached, and self-abort at 3s; a failure inside them
+    // falls back to the unenriched text rather than failing the segment.
+    let translatedText = raw;
+    try {
+      const hadithEnriched = await verifyAndEnrich(translatedText);
+      const quranEnriched = await verifyAndEnrichQuran(hadithEnriched.text, target);
+      translatedText = quranEnriched.text;
+    } catch {
+      /* enrichment is best-effort — keep the plain translation */
+    }
     return NextResponse.json({ translatedText });
   } catch (e) {
     console.error("trial translate error", e);

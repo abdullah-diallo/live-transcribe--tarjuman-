@@ -8,6 +8,11 @@ import { verifyAndEnrich } from "@/lib/sunnah";
 import { verifyAndEnrichQuran } from "@/lib/quran";
 import { isOffLanguageScript } from "@/lib/script";
 import { looksLikeMetaCommentary } from "@/lib/translation-guard";
+import {
+  OFFLANG_MARKER,
+  TRANSLATION_CORE_PROMPT,
+  buildTranslationUserMessage,
+} from "@/lib/translation-prompt";
 
 interface TranslateRequest {
   text: string;
@@ -236,7 +241,9 @@ ${context!
     : "";
 
   if (!hasContext) {
-    return `Translate from ${sourceName} to ${targetName}:\n\n${text}`;
+    // Shared with the landing trial so both paths frame the segment as a
+    // translation TASK identically (see @/lib/translation-prompt).
+    return buildTranslationUserMessage({ text, sourceName, targetName });
   }
 
   return `${contextBlock}Now translate ONLY this segment from ${sourceName} to ${targetName} (output the translation only):
@@ -250,15 +257,15 @@ ${text}`;
 // as the translation and skip the merge silently.
 const MERGE_MARKER = "<<<MERGE>>>";
 
-// Off-language marker. The model emits this — and only this — when it recognizes
-// the segment as a phonetic transliteration of coherent speech in a DIFFERENT
-// language than the source (English/French/etc. spoken near the mic, rendered by
-// the source-forced STT into source script). It can only appear at the very
-// start of the output; the stream parser detects it up front, streams nothing,
-// and signals `offLanguage: true` in the trailer so the client suppresses the
-// phantom segment. Deliberately distinct from the plain empty-string verdict
-// (untranslatable / unsure), which stays fail-open and keeps the source card.
-const OFFLANG_MARKER = "<<<OFFLANG>>>";
+// OFFLANG_MARKER is imported from @/lib/translation-prompt (shared with the
+// landing trial). The model emits it — and only it — when it recognizes the
+// segment as a phonetic transliteration of coherent speech in a DIFFERENT
+// language than the source (English/French/etc. spoken near the mic, rendered
+// by the source-forced STT into source script). Here the stream parser detects
+// it, streams nothing, and signals `offLanguage: true` in the trailer so the
+// client suppresses the phantom segment. Deliberately distinct from the plain
+// empty-string verdict (untranslatable / unsure), which stays fail-open and
+// keeps the source card.
 
 // Chars held back from the streamed prose so a control marker split across two
 // SSE deltas can never partially flash on screen. Covers the longer of the two
@@ -327,18 +334,10 @@ function parseMergeDirective(
 // a module so /api/summarize uses identical guidance.
 //
 // `cache_control: ephemeral` is set on this block below; the prompt is
-// large enough to comfortably exceed Haiku's 2048-token cache threshold,
+// large enough to exceed Haiku 4.5's 4096-token minimum cacheable prefix
+// (measured ~5.3k tokens on 2026-07-25 — see @/lib/islamic-terminology),
 // so subsequent calls within a 5-minute window pay ~10% of input cost.
-const SYSTEM_PROMPT = `You are a translation engine for a live transcription app used by Sunni Muslim audiences for Islamic sermons (khutbahs), lectures, classes, Quranic study, and religious talks. Interpret all Islamic content within the framework of Ahl as-Sunnah wal-Jama'ah following the methodology of the Salaf as-Salih (the righteous predecessors). Translate the user's text from the source language to the target language and output ONLY the translation — no preamble, no commentary, no quotation marks, no language labels.
-
-## General rules
-- Output ONLY the translation. Never address the user. Never include notes, warnings, parentheticals about input quality, requests for clarification, or any text that is not itself a translation of the input.
-- Match the register of the source. Formal Arabic (MSA / classical) → formal English. Conversational → conversational.
-- Input may be a fragment or mid-sentence — this is a live transcription app, so the speaker hasn't finished. Translate fragments as fragments. If a word is cut off mid-syllable, translate what's there and end with "..." rather than commenting on the cut.
-- If the input is already in the target language, output it unchanged.
-- If the input is empty, gibberish, or genuinely untranslatable, output an empty string (do not invent translations of noise, do not explain why).
-- OFF-LANGUAGE AUDIO: the STT engine is FORCED to the source language, so speech in a DIFFERENT language arrives as a phonetic transliteration into the source script — it looks like source-language letters but is actually another language's words spelled out phonetically (e.g. English "okay so basically" arriving as "اوكي سو بيسكلي", or French "d'accord" as "داكور"). When you can RECOGNIZE that the text is a phonetic transliteration of coherent speech in a specific OTHER language — i.e. you can read the foreign words through the source-script spelling — output EXACTLY this marker on its own line and NOTHING else: <<<OFFLANG>>>. Use the marker ONLY when you are certain it is a different language; NEVER for unusual, dialectal, colloquial, archaic, or merely unfamiliar source-language content, and never for proper nouns/names. If you are at all unsure whether it is off-language or just atypical source-language speech, do NOT use the marker — output an empty string instead (which safely keeps the original on screen). Never attempt a best-effort translation of transliterated noise.
-- The Islamic-terminology rules below apply REGARDLESS of source language. They fire whenever Islamic content is present — Arabic→English, English→Urdu, Turkish→French, etc.
+const SYSTEM_PROMPT = `${TRANSLATION_CORE_PROMPT}
 
 ## Context handling
 - The user message may contain a "Context (prior segments)" block before the segment to translate. That context exists ONLY for disambiguation — to give you the surrounding flow when the current segment is short or ambiguous.
