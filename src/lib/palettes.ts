@@ -8,10 +8,10 @@
  * Both are driven from here so a palette can be swapped in one edit.
  *
  * TARJUMAN (green on near-black) is the SHIPPED palette and the default
- * everywhere. SUNSET (orange on deep violet) is an experiment that is applied
- * ONLY on localhost — same mechanism as SHOW_PRICING. Nothing about the
- * original is deleted or rewritten: to go back, flip ACTIVE_PALETTE_NAME to
- * "tarjuman" (or just ship, since production already uses it).
+ * everywhere. The others are experiments applied ONLY on localhost — same
+ * mechanism as SHOW_PRICING. Nothing shipped is deleted or rewritten when we
+ * try one: to go back, point ACTIVE_PALETTE_NAME at "tarjuman" (production
+ * already uses it regardless).
  */
 
 export interface Palette {
@@ -110,9 +110,59 @@ export const PALETTE_SUNSET: Palette = {
   t4: "#6B5590",
 };
 
+/**
+ * GOLD — gold on warm near-black, from the supplied ramp:
+ *   #FFE169 #FAD643 #EDC531 #DBB42C #C9A227
+ *   #B69121 #A47E1B #926C15 #805B10 #76520E
+ *
+ * This ramp is MONOCHROMATIC — ten tints of one hue, with no dark base and no
+ * second family — so two decisions had to be made rather than read off it:
+ *
+ *   1. The page is NOT gold. Every swatch here is a mid-to-light yellow; a
+ *      gold background would be a lit screen in a dark room, which is the one
+ *      thing this app must not be. The base is a warm near-black derived to
+ *      sit under the ramp, and the gold does the work in the accent, borders
+ *      and text — the classic gold-on-dark reading.
+ *   2. Roles that must stay distinguishable can't all be gold. Record-vs-
+ *      paused separates by LIGHTNESS (bright gold vs dimmer old-gold), stop
+ *      stays red, and the source-language pane takes a muted steel blue: with
+ *      a gold accent the two transcript panes would otherwise be the same
+ *      colour, and blue-and-gold is the pairing this audience already reads
+ *      as mosque tilework rather than as a random extra hue.
+ *
+ * Borders and soft fills are gold-tinted (not white/neutral) so the chrome
+ * reads warm all the way through instead of only at the accent.
+ */
+export const PALETTE_GOLD: Palette = {
+  bg: "#12100A",
+  surface: "#1C1810",
+  surfaceLight: "#2A2216",
+  border: "rgba(250,214,67,0.12)",
+  borderLight: "rgba(250,214,67,0.22)",
+  accent: "#FAD643",
+  // A near shade of the accent (hover/gradient), NOT the paused colour — those
+  // two must stay far apart or a hovered record button reads as paused.
+  accentDk: "#DBB42C",
+  accentSoft: "rgba(250,214,67,0.12)",
+  red: "#EF4444",
+  redSoft: "rgba(239,68,68,0.12)",
+  // Old gold. Measured: 2.65x luminance apart from the accent (vs 1.70x for a
+  // mid gold) — with one hue to work with, that lightness gap is the only thing
+  // telling "paused" apart from "recording", so it is deliberately this dim.
+  amber: "#A47E1B",
+  amberSoft: "rgba(164,126,27,0.20)",
+  blue: "#6E8BA6",
+  blueSoft: "rgba(110,139,166,0.16)",
+  w: "#FBF5E6",
+  t2: "#D8CBAA",
+  t3: "#9C8E70",
+  t4: "#6B6048",
+};
+
 export const PALETTES = {
   tarjuman: PALETTE_TARJUMAN,
   sunset: PALETTE_SUNSET,
+  gold: PALETTE_GOLD,
 } as const;
 
 export type PaletteName = keyof typeof PALETTES;
@@ -120,14 +170,14 @@ export type PaletteName = keyof typeof PALETTES;
 /**
  * Which palette is live.
  *
- * Localhost (`next dev` → NODE_ENV "development") gets SUNSET so it can be
- * judged in the real UI; the deployed site keeps the shipped TARJUMAN palette.
- * Same switch style as SHOW_PRICING.
+ * Localhost (`next dev` → NODE_ENV "development") renders the palette named
+ * here so it can be judged in the real UI; the deployed site always keeps the
+ * shipped TARJUMAN palette. Same switch style as SHOW_PRICING.
  *
- * To keep sunset after trying it → hardcode "sunset".
- * To drop the experiment → hardcode "tarjuman" (or delete PALETTE_SUNSET).
+ * Change the name below to try another one ("sunset" | "gold" | "tarjuman").
+ * To ship whichever wins → hardcode it (drop the NODE_ENV check).
  */
 export const ACTIVE_PALETTE_NAME: PaletteName =
-  process.env.NODE_ENV === "development" ? "sunset" : "tarjuman";
+  process.env.NODE_ENV === "development" ? "gold" : "tarjuman";
 
 export const ACTIVE_PALETTE: Palette = PALETTES[ACTIVE_PALETTE_NAME];

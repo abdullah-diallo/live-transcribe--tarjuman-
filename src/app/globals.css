@@ -78,6 +78,35 @@ html[data-palette="sunset"] {
   --color-surface-rgb: 60, 9, 108;
 }
 
+/* ── GOLD palette (localhost only) ────────────────────────────────────────
+   Gold on warm near-black. Mirrors PALETTE_GOLD in @/lib/palettes — keep the
+   two in sync. Same override mechanism as the sunset block above. */
+html[data-palette="gold"] {
+  --color-bg: #12100a;
+  --color-surface: #1c1810;
+  --color-surface-light: #2a2216;
+  /* Gold-tinted rather than white, so the chrome reads warm throughout. */
+  --color-border-faint: rgba(250, 214, 67, 0.12);
+  --color-border-light: rgba(250, 214, 67, 0.22);
+  --color-accent: #fad643;
+  --color-accent-dk: #dbb42c;
+  --color-accent-soft: rgba(250, 214, 67, 0.12);
+  --color-red-main: #ef4444;
+  --color-red-soft: rgba(239, 68, 68, 0.12);
+  --color-amber-main: #a47e1b;
+  --color-amber-soft: rgba(164, 126, 27, 0.2);
+  --color-blue-main: #6e8ba6;
+  --color-blue-soft: rgba(110, 139, 166, 0.16);
+  --color-text-1: #fbf5e6;
+  --color-text-2: #d8cbaa;
+  --color-text-3: #9c8e70;
+  --color-text-4: #6b6048;
+  --color-accent-glow: rgba(250, 214, 67, 0.22);
+  --color-accent-rgb: 250, 214, 67;
+  --color-bg-rgb: 18, 16, 10;
+  --color-surface-rgb: 28, 24, 16;
+}
+
 html,
 body {
   background: var(--color-bg);
