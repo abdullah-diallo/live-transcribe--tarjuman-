@@ -512,25 +512,38 @@ async function collectRecentListItems(
   userId: Id<"users">,
   limit: number
 ): Promise<Omit<Doc<"sessions">, "segments">[]> {
+  // Read a bounded window of the newest sessions, then keep the non-empty ones.
+  //
+  // This used to loop `.paginate()` until it had `limit` rows, which THROWS —
+  // "Convex only supports a single paginated query in each function" — the
+  // moment a second page is needed. That happens whenever the newest rows are
+  // mostly EMPTY, and empty rows are routine here: /record creates a session on
+  // prewarm, so every visit to the recorder that doesn't record leaves a
+  // phantom behind. Enough phantoms in a row pushed this into its second
+  // iteration and took the query down for every caller.
+  //
+  // `.take()` is not a paginated query, so the limitation doesn't apply, and it
+  // still reads a BOUNDED number of documents — which was the real point of not
+  // using `.collect()` here (a user with 200 saved khutbahs shouldn't load all
+  // of them just to render three cards).
+  //
+  // The window is a multiple of `limit` so it absorbs a healthy run of
+  // phantoms. In the pathological case of more consecutive empty rows than the
+  // window, the user sees fewer than `limit` recents — a short list, never an
+  // error.
+  const scanWindow = Math.max(limit * 10, 40);
+
+  const newest = await ctx.db
+    .query("sessions")
+    .withIndex("by_user_date", (q) => q.eq("userId", userId))
+    .order("desc")
+    .take(scanWindow);
+
   const results: Omit<Doc<"sessions">, "segments">[] = [];
-  let cursor: string | null = null;
-  const pageSize = Math.max(limit * 3, 10);
-
-  while (results.length < limit) {
-    const page = await ctx.db
-      .query("sessions")
-      .withIndex("by_user_date", (q) => q.eq("userId", userId))
-      .order("desc")
-      .paginate({ numItems: pageSize, cursor });
-
-    for (const session of page.page) {
-      if (segmentCountOf(session) === 0) continue;
-      results.push(toListItem(session));
-      if (results.length >= limit) return results;
-    }
-
-    if (page.isDone) break;
-    cursor = page.continueCursor;
+  for (const session of newest) {
+    if (segmentCountOf(session) === 0) continue;
+    results.push(toListItem(session));
+    if (results.length >= limit) break;
   }
 
   return results;
