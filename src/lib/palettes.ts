@@ -159,10 +159,63 @@ export const PALETTE_GOLD: Palette = {
   t4: "#6B6048",
 };
 
+/**
+ * NOIR — gold on true black, over a brown depth ramp, from the supplied set:
+ *   #FFE169 #E5C55F #D1AF57
+ *   #7F5539 #735238 #5C422D #4A3524 #3B2A1D #2F2217
+ *   #000000
+ *
+ * Unlike the other two experiments this ramp maps itself, because it splits
+ * cleanly by measured luminance on black:
+ *   - the three GOLDS are 16.2 / 12.5 / 10.0 contrast — all AAA, so they are
+ *     the content and accent layer;
+ *   - every BROWN is 3.3 or below — unusable as text, which is exactly what a
+ *     depth ramp should be, so they build background → card → raised;
+ *   - #000000 is the page. True black is the right base for the primary use
+ *     case (a phone held in a dark masjid, usually OLED, where black pixels
+ *     emit no light at all).
+ *
+ * Role notes:
+ *   - The lightest brown sits 4.98x from the accent, so source-language cards
+ *     (brown edge) and translation cards (gold edge) are the most separated
+ *     pair of any palette here. That matters more than anywhere else: the two
+ *     transcript panes are what a user reads for the entire session.
+ *   - Record vs paused separates by only 1.63x, because after the accent and
+ *     its hover shade there is one gold left. That is the accepted cost of
+ *     spending the strongest separation on the transcript panes instead —
+ *     paused also changes its icon, freezes the timer, and shows a filled
+ *     banner, so colour is not carrying that state alone.
+ *   - red stays red for stop/destructive.
+ */
+export const PALETTE_NOIR: Palette = {
+  bg: "#000000",
+  surface: "#2F2217",
+  surfaceLight: "#4A3524",
+  border: "rgba(255,225,105,0.12)",
+  borderLight: "rgba(255,225,105,0.2)",
+  accent: "#FFE169",
+  accentDk: "#E5C55F",
+  accentSoft: "rgba(255,225,105,0.12)",
+  red: "#EF4444",
+  redSoft: "rgba(239,68,68,0.14)",
+  amber: "#D1AF57",
+  // Deliberately a stronger fill than the other palettes use: with only 1.63x
+  // of lightness between the accent and this, the paused control leans on
+  // being visibly FILLED rather than on hue.
+  amberSoft: "rgba(209,175,87,0.22)",
+  blue: "#7F5539",
+  blueSoft: "rgba(127,85,57,0.22)",
+  w: "#F5EFE2",
+  t2: "#CBBBA0",
+  t3: "#9A8A72",
+  t4: "#6B5D4A",
+};
+
 export const PALETTES = {
   tarjuman: PALETTE_TARJUMAN,
   sunset: PALETTE_SUNSET,
   gold: PALETTE_GOLD,
+  noir: PALETTE_NOIR,
 } as const;
 
 export type PaletteName = keyof typeof PALETTES;
@@ -174,10 +227,10 @@ export type PaletteName = keyof typeof PALETTES;
  * here so it can be judged in the real UI; the deployed site always keeps the
  * shipped TARJUMAN palette. Same switch style as SHOW_PRICING.
  *
- * Change the name below to try another one ("sunset" | "gold" | "tarjuman").
+ * Change the name below to try another ("noir" | "gold" | "sunset" | "tarjuman").
  * To ship whichever wins → hardcode it (drop the NODE_ENV check).
  */
 export const ACTIVE_PALETTE_NAME: PaletteName =
-  process.env.NODE_ENV === "development" ? "gold" : "tarjuman";
+  process.env.NODE_ENV === "development" ? "noir" : "tarjuman";
 
 export const ACTIVE_PALETTE: Palette = PALETTES[ACTIVE_PALETTE_NAME];

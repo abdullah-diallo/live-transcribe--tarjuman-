@@ -107,6 +107,34 @@ html[data-palette="gold"] {
   --color-surface-rgb: 28, 24, 16;
 }
 
+/* ── NOIR palette (localhost only) ────────────────────────────────────────
+   Gold on true black over a brown depth ramp. Mirrors PALETTE_NOIR in
+   @/lib/palettes — keep the two in sync. Same override mechanism as above. */
+html[data-palette="noir"] {
+  --color-bg: #000000;
+  --color-surface: #2f2217;
+  --color-surface-light: #4a3524;
+  --color-border-faint: rgba(255, 225, 105, 0.12);
+  --color-border-light: rgba(255, 225, 105, 0.2);
+  --color-accent: #ffe169;
+  --color-accent-dk: #e5c55f;
+  --color-accent-soft: rgba(255, 225, 105, 0.12);
+  --color-red-main: #ef4444;
+  --color-red-soft: rgba(239, 68, 68, 0.14);
+  --color-amber-main: #d1af57;
+  --color-amber-soft: rgba(209, 175, 87, 0.22);
+  --color-blue-main: #7f5539;
+  --color-blue-soft: rgba(127, 85, 57, 0.22);
+  --color-text-1: #f5efe2;
+  --color-text-2: #cbbba0;
+  --color-text-3: #9a8a72;
+  --color-text-4: #6b5d4a;
+  --color-accent-glow: rgba(255, 225, 105, 0.22);
+  --color-accent-rgb: 255, 225, 105;
+  --color-bg-rgb: 0, 0, 0;
+  --color-surface-rgb: 47, 34, 23;
+}
+
 html,
 body {
   background: var(--color-bg);
