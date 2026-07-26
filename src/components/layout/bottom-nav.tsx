@@ -176,6 +176,8 @@ export function BottomNav() {
           <Link
             key={tab.id}
             href={tab.href}
+            // Same reason as the sidebar: prefetch the tab, don't fetch on tap.
+            prefetch
             className={cn(
               "relative z-10 flex flex-col items-center gap-[3px] py-[7px] rounded-full",
               // Press feedback only — colors crossfade on the children, so

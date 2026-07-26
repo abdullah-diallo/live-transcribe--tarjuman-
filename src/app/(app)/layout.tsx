@@ -13,6 +13,7 @@ import { Icon } from "@/components/shared/icon";
 import { COLORS, SHOW_PRICING } from "@/lib/constants";
 import { LocaleProvider } from "@/lib/i18n/locale-context";
 import { BILLING_ENABLED } from "../../../convex/billingLimits";
+import { useWarmAppData } from "@/hooks/use-warm-app-data";
 
 /**
  * Auth-guarded shell. Three states:
@@ -39,6 +40,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       router.replace("/?auth=signin");
     }
   }, [isLoading, isAuthenticated, router]);
+
+  // Fetch what every tab needs ONCE, here in the shell, instead of letting each
+  // page fetch on mount. Convex caches by (function, args), so History/Settings
+  // then render populated on their first frame rather than after a round-trip.
+  // Called before the early return below because hooks can't be conditional —
+  // it no-ops via Convex's "skip" until the user is authenticated.
+  useWarmAppData(isAuthenticated);
 
   // Dead-identity guard: a still-valid JWT whose user row was deleted leaves
   // isAuthenticated=true but me=null. Don't render a broken shell — sign out.

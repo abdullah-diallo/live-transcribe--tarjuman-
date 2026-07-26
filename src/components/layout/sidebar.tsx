@@ -111,6 +111,9 @@ export function Sidebar() {
                 <Link
                   key={item.href}
                   href={item.href}
+                  // Pull the route down as soon as the shell renders, so
+                  // switching tabs is instant instead of fetching on click.
+                  prefetch
                   // border-transparent keeps the box size stable; inactive items
                   // light up with the same green outline + glow on hover (the
                   // active item's outline is drawn by the pill behind it).
