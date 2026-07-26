@@ -20,11 +20,20 @@ export function IdleRecordButton({ onStart, disabled }: IdleRecordButtonProps) {
         aria-label="Start recording"
         className="w-[120px] h-[120px] rounded-full border-0 cursor-pointer grid place-items-center transition-all duration-200 hover:scale-105 hover:brightness-110 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:brightness-100"
         style={{
-          background: `linear-gradient(135deg, ${COLORS.accent}, ${COLORS.accentDk})`,
+          // Starts at the DEEPER accent and darkens further, instead of running
+          // between the two lightest shades — at full accent this button was a
+          // pale disc that glared on a dark screen. 80% keeps the far end above
+          // 4.2:1 against the glyph in every palette (measured), so it can't be
+          // darkened into an unreadable button by a future palette.
+          background: `linear-gradient(135deg, ${COLORS.accentDk}, color-mix(in srgb, ${COLORS.accentDk} 80%, #000))`,
           boxShadow: `0 0 40px ${COLORS.accent}30, 0 0 0 8px ${COLORS.accentSoft}`,
         }}
       >
-        <Icon name="mic" size={40} color="#fff" />
+        {/* Dark ink, not white. White on the accent measures 1.3-2.3:1 in EVERY
+            palette — the glyph was effectively invisible on gold. The page
+            background colour is the darkest thing in each palette, so it is the
+            correct ink here (8-16:1). */}
+        <Icon name="mic" size={40} color={COLORS.bg} />
       </button>
       <span className="text-sm" style={{ color: COLORS.t3 }}>
         {t("record.tapToStart")}

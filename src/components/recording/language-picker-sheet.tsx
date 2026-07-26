@@ -203,7 +203,7 @@ export function LanguagePickerSheet({
                         className="w-5 h-5 rounded-full grid place-items-center"
                         style={{ background: COLORS.accent }}
                       >
-                        <Icon name="check" size={12} color="#fff" />
+                        <Icon name="check" size={12} color={COLORS.bg} />
                       </div>
                     )}
                   </button>
