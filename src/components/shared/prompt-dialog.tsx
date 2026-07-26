@@ -173,7 +173,7 @@ export function PromptDialog({
               type="button"
               onClick={handleSave}
               disabled={busy || !value.trim()}
-              className="h-10 px-4 rounded-lg text-[13px] font-bold cursor-pointer transition-transform active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+              className="h-10 px-4 rounded-lg text-[13px] font-bold cursor-pointer transition-all duration-200 ease-out active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:brightness-100 hover:-translate-y-0.5 hover:brightness-110 shadow-[0_0_20px_rgba(var(--color-accent-rgb),0.3)] hover:shadow-[0_0_30px_rgba(var(--color-accent-rgb),0.6)]"
               style={{
                 background: COLORS.accent,
                 color: "#0A0F1C",

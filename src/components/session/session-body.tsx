@@ -249,7 +249,7 @@ export function SessionBody({
               type="button"
               onClick={handleGenerate}
               disabled={segments.length === 0}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-2xl font-bold text-sm cursor-pointer transition-transform active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-2xl font-bold text-sm cursor-pointer transition-all duration-200 ease-out active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:brightness-100 hover:-translate-y-0.5 hover:brightness-110 shadow-[0_0_20px_rgba(var(--color-accent-rgb),0.3)] hover:shadow-[0_0_30px_rgba(var(--color-accent-rgb),0.6)]"
               style={{
                 background: `linear-gradient(135deg, ${COLORS.accent}, ${COLORS.accentDk})`,
                 color: "#0A0F1C",

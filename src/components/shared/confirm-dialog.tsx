@@ -139,7 +139,7 @@ export function ConfirmDialog({
                   void handleConfirm();
                 }}
                 disabled={busy}
-                className="h-10 px-4 rounded-lg text-[13px] font-bold cursor-pointer transition-transform active:scale-[0.98] disabled:opacity-60 disabled:cursor-wait"
+                className="h-10 px-4 rounded-lg text-[13px] font-bold cursor-pointer transition-all duration-200 ease-out active:scale-[0.98] hover:-translate-y-0.5 hover:brightness-110 disabled:opacity-60 disabled:cursor-wait disabled:hover:translate-y-0 disabled:hover:brightness-100"
                 style={{
                   background: confirmBg,
                   color: confirmFg,

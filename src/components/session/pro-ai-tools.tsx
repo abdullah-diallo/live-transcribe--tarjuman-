@@ -95,7 +95,7 @@ export function ProAiTools({
                   key={id}
                   type="button"
                   onClick={() => setTab(id)}
-                  className="flex-1 h-8 rounded-lg text-[12.5px] font-bold cursor-pointer transition-all duration-200"
+                  className="flex-1 h-8 rounded-lg text-[12.5px] font-bold cursor-pointer transition-all duration-200 ease-out hover:-translate-y-px hover:brightness-110 hover:shadow-[0_0_14px_rgba(var(--color-accent-rgb),0.22)]"
                   style={{
                     background: active ? COLORS.accent : "transparent",
                     color: active ? "#0A0F1C" : COLORS.t2,

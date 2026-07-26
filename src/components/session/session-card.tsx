@@ -47,6 +47,18 @@ export function SessionCard({ session }: SessionCardProps) {
   const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Kept mounted through the exit animation so the flyout glides out instead of
+  // vanishing the instant `menuOpen` flips false. Same recipe as account-menu.
+  const [menuVisible, setMenuVisible] = useState(false);
+  useEffect(() => {
+    if (menuOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setMenuVisible(true);
+      return;
+    }
+    const t = window.setTimeout(() => setMenuVisible(false), 200);
+    return () => window.clearTimeout(t);
+  }, [menuOpen]);
   // The popover is positioned `fixed` from the kebab's rect so it escapes the
   // card's `overflow-hidden` and the scrolling list (an absolute menu clips).
   const [menuStyle, setMenuStyle] = useState<React.CSSProperties | null>(null);
@@ -126,12 +138,13 @@ export function SessionCard({ session }: SessionCardProps) {
   };
 
   return (
+    // Border/background are CLASSES, not inline styles: an inline declaration
+    // beats a Tailwind `hover:` rule, so while they lived in `style` no hover
+    // border or glow could ever apply. `data-hovercard` lets AutoHoverGrid
+    // replay the same lift+glow on touch, where there is no pointer to hover.
     <div
-      className="w-full flex items-stretch rounded-[20px] mb-[10px] overflow-hidden"
-      style={{
-        background: COLORS.surface,
-        border: `1px solid ${COLORS.border}`,
-      }}
+      data-hovercard
+      className="group w-full flex items-stretch rounded-[20px] mb-[10px] overflow-hidden border border-[var(--color-border-faint)] bg-[var(--color-surface)] transition duration-200 ease-out will-change-transform hover:-translate-y-1.5 hover:border-[var(--color-accent)] hover:bg-[var(--color-surface-light)] hover:shadow-[0_14px_36px_rgba(var(--color-accent-rgb),0.2)]"
     >
       <Link
         href={`/session/${session._id}`}
@@ -198,16 +211,20 @@ export function SessionCard({ session }: SessionCardProps) {
         </button>
       </div>
 
-      {menuOpen && menuStyle && (
+      {(menuOpen || menuVisible) && menuStyle && (
         <>
           <div
-            className="fixed inset-0 z-40"
+            className={`fixed inset-0 z-40 transition-opacity duration-200 ${
+              menuOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+            }`}
             onClick={() => setMenuOpen(false)}
           />
           <div
             ref={menuRef}
             role="menu"
-            className="z-50 w-44 rounded-xl overflow-hidden"
+            className={`z-50 w-44 rounded-xl overflow-hidden origin-top transition-[opacity,transform] duration-200 ease-out ${
+              menuOpen ? "opacity-100 scale-100 translate-y-0" : "opacity-0 scale-95 -translate-y-1"
+            }`}
             style={{
               ...menuStyle,
               background: COLORS.surface,

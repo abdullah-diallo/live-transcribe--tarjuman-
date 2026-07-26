@@ -5,6 +5,7 @@ import { COLORS } from "@/lib/constants";
 import { formatDate, formatDuration, getLangName } from "@/lib/utils";
 import { Icon } from "@/components/shared/icon";
 import { useRecentSessions } from "@/hooks/use-sessions";
+import { AutoHoverGrid } from "@/components/landing/auto-hover-grid";
 
 export function RecentSessionsPreview() {
   const sessions = useRecentSessions(3);
@@ -17,7 +18,7 @@ export function RecentSessionsPreview() {
   if (sessions.length === 0) return null;
 
   return (
-    <div>
+    <AutoHoverGrid>
       <div className="section-label mb-3">Recent</div>
       {sessions.map((s) => {
         const title = s.title ?? "Untitled session";
@@ -25,11 +26,10 @@ export function RecentSessionsPreview() {
           <Link
             key={s._id}
             href={`/session/${s._id}`}
-            className="w-full flex items-center gap-3 px-5 py-4 rounded-[20px] mb-[10px] cursor-pointer transition-colors"
-            style={{
-              background: COLORS.surface,
-              border: `1px solid ${COLORS.border}`,
-            }}
+            // Was `transition-colors` with no hover rule at all — a transition
+            // on nothing. Same convention as the history rows now.
+            data-hovercard
+            className="group w-full flex items-center gap-3 px-5 py-4 rounded-[20px] mb-[10px] cursor-pointer border border-[var(--color-border-faint)] bg-[var(--color-surface)] transition duration-200 ease-out will-change-transform hover:-translate-y-1.5 hover:border-[var(--color-accent)] hover:bg-[var(--color-surface-light)] hover:shadow-[0_14px_36px_rgba(var(--color-accent-rgb),0.2)]"
           >
             <div
               className="w-10 h-10 rounded-2xl grid place-items-center flex-shrink-0"
@@ -61,6 +61,6 @@ export function RecentSessionsPreview() {
           </Link>
         );
       })}
-    </div>
+    </AutoHoverGrid>
   );
 }

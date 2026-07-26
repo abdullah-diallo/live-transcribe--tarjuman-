@@ -160,7 +160,7 @@ export function PositioningTips({
             <button
               type="button"
               onClick={() => handleClose(false)}
-              className="w-full h-12 rounded-xl font-bold text-sm cursor-pointer transition-transform active:scale-[0.98]"
+              className="w-full h-12 rounded-xl font-bold text-sm cursor-pointer transition-all duration-200 ease-out active:scale-[0.98] hover:-translate-y-0.5 hover:brightness-110 shadow-[0_0_20px_rgba(var(--color-accent-rgb),0.3)] hover:shadow-[0_0_30px_rgba(var(--color-accent-rgb),0.6)]"
               style={{
                 background: COLORS.accent,
                 color: "#0A0F1C",

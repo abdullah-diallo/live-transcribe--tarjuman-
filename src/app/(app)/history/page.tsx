@@ -6,6 +6,7 @@ import { getLangName } from "@/lib/utils";
 import { Icon } from "@/components/shared/icon";
 import { Skeleton } from "@/components/shared/skeleton";
 import { SessionCard } from "@/components/session/session-card";
+import { AutoHoverGrid } from "@/components/landing/auto-hover-grid";
 import { useAllSessions } from "@/hooks/use-sessions";
 import { useLocale } from "@/lib/i18n/locale-context";
 
@@ -131,11 +132,13 @@ export default function HistoryPage() {
       )}
 
       {filtered !== undefined && filtered.length > 0 && (
-        <div className="flex-1 overflow-auto px-5 py-4">
+        // AutoHoverGrid replays each card's lift+glow on touch as it scrolls
+        // into view — without it the [data-hovercard] cards are inert on mobile.
+        <AutoHoverGrid className="flex-1 overflow-auto px-5 py-4">
           {filtered.map((s) => (
             <SessionCard key={s._id} session={s} />
           ))}
-        </div>
+        </AutoHoverGrid>
       )}
     </div>
   );

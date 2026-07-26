@@ -13,6 +13,7 @@ import {
 import { COLORS } from "@/lib/constants";
 import { Icon } from "@/components/shared/icon";
 import { usePlan } from "@/hooks/use-plan";
+import { AutoHoverGrid } from "@/components/landing/auto-hover-grid";
 
 const ORDER: Plan[] = ["free", "pro", "scholar"];
 
@@ -50,9 +51,8 @@ export default function PlansPage() {
         <button
           type="button"
           onClick={() => router.back()}
-          className="w-9 h-9 rounded-lg grid place-items-center transition-colors cursor-pointer"
+          className="w-9 h-9 rounded-lg grid place-items-center cursor-pointer border border-transparent bg-[var(--color-surface)] transition-all duration-200 ease-out hover:border-[var(--color-accent)] hover:bg-[var(--color-surface-light)] hover:shadow-[0_0_16px_rgba(var(--color-accent-rgb),0.25)] active:scale-95"
           aria-label="Back"
-          style={{ background: COLORS.surface }}
         >
           <Icon name="back" size={18} color={COLORS.t2} />
         </button>
@@ -82,7 +82,7 @@ export default function PlansPage() {
             type="button"
             onClick={() => setAnnual(false)}
             className="relative z-10 w-[88px] py-1.5 rounded-full text-[13px] font-bold transition-colors duration-200 cursor-pointer"
-            style={{ color: annual ? COLORS.t2 : "#0A0F1C" }}
+            style={{ color: annual ? COLORS.t2 : COLORS.bg }}
           >
             Monthly
           </button>
@@ -90,7 +90,7 @@ export default function PlansPage() {
             type="button"
             onClick={() => setAnnual(true)}
             className="relative z-10 w-[88px] py-1.5 rounded-full text-[13px] font-bold transition-colors duration-200 cursor-pointer"
-            style={{ color: annual ? "#0A0F1C" : COLORS.t2 }}
+            style={{ color: annual ? COLORS.bg : COLORS.t2 }}
           >
             Annual
           </button>
@@ -105,7 +105,7 @@ export default function PlansPage() {
       )}
 
       {/* Cards — stacked on mobile, side-by-side grid on desktop */}
-      <div className="flex flex-col md:flex-row md:items-stretch gap-3 px-5 py-4">
+      <AutoHoverGrid className="flex flex-col md:flex-row md:items-stretch gap-3 px-5 py-4">
         {ORDER.map((tier) => {
           const meta = PLAN_META[tier];
           const isFree = tier === "free";
@@ -116,20 +116,25 @@ export default function PlansPage() {
           return (
             <div
               key={tier}
-              className="w-full md:flex-1 md:min-w-0 rounded-2xl px-4 py-4 flex flex-col transition-[transform,box-shadow] duration-300 ease-out hover:-translate-y-1 hover:shadow-2xl"
-              style={{
-                background: COLORS.surface,
-                border: `1px solid ${popular ? `${COLORS.accent}66` : COLORS.border}`,
-                boxShadow: popular
-                  ? `0 0 0 1px ${COLORS.accent}22, 0 10px 30px rgba(0,0,0,0.35)`
-                  : undefined,
-              }}
+              // `data-hovercard` lets AutoHoverGrid replay the lift + glow on
+              // TOUCH devices as the card scrolls into view — without it these
+              // cards are completely inert on mobile, which is most of the
+              // traffic. Everything visual is a CLASS, not an inline style:
+              // inline `border`/`boxShadow` always beat a Tailwind `hover:`
+              // rule, which is why the popular card previously had no hover
+              // shadow at all and the others only got a generic black one.
+              data-hovercard
+              className={`group w-full md:flex-1 md:min-w-0 rounded-2xl px-4 py-4 flex flex-col border bg-[var(--color-surface)] transition duration-200 ease-out will-change-transform hover:-translate-y-1.5 hover:bg-[var(--color-surface-light)] hover:border-[var(--color-accent)] hover:shadow-[0_14px_36px_rgba(var(--color-accent-rgb),0.2)] ${
+                popular
+                  ? "border-[rgba(var(--color-accent-rgb),0.4)] shadow-[0_0_0_1px_rgba(var(--color-accent-rgb),0.13),0_10px_30px_rgba(0,0,0,0.35)]"
+                  : "border-[var(--color-border-faint)]"
+              }`}
             >
               {popular && (
                 <div className="flex justify-center -mt-1 mb-2">
                   <span
                     className="text-[9px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full"
-                    style={{ background: COLORS.accent, color: "#0A0F1C" }}
+                    style={{ background: COLORS.accent, color: COLORS.bg }}
                   >
                     ◆ Most Popular
                   </span>
@@ -203,8 +208,9 @@ export default function PlansPage() {
               ) : isCurrent ? (
                 <Link
                   href="/settings"
-                  className="w-full h-11 rounded-xl flex items-center justify-center text-[13px] font-semibold mb-4 cursor-pointer transition-colors"
-                  style={{ background: COLORS.bg, border: `1px solid ${COLORS.border}`, color: COLORS.t3 }}
+                  // Secondary action: same glow language, dialled down. Border
+                  // and background are classes so the hover rules can win.
+                  className="w-full h-11 rounded-xl flex items-center justify-center text-[13px] font-semibold mb-4 cursor-pointer border border-[var(--color-border-faint)] bg-[var(--color-bg)] text-[var(--color-text-3)] transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-[var(--color-accent)] hover:text-[var(--color-text-2)] hover:shadow-[0_0_16px_rgba(var(--color-accent-rgb),0.25)]"
                 >
                   {isFree ? "Your current plan" : "Manage billing"}
                 </Link>
@@ -212,10 +218,14 @@ export default function PlansPage() {
                 <button
                   type="button"
                   onClick={openCheckout}
-                  className="w-full h-11 rounded-xl flex items-center justify-center text-[13px] font-bold mb-4 cursor-pointer transition-transform active:scale-[0.98]"
+                  // Primary-CTA convention (see marketing-nav): resting glow that
+                  // intensifies on hover, plus lift + brightness. It previously
+                  // had only `transition-transform`, so the main paid action was
+                  // the flattest thing on the screen.
+                  className="w-full h-11 rounded-xl flex items-center justify-center text-[13px] font-bold mb-4 cursor-pointer transition-all duration-200 ease-out hover:-translate-y-0.5 hover:brightness-110 active:scale-[0.98] shadow-[0_0_20px_rgba(var(--color-accent-rgb),0.3)] hover:shadow-[0_0_30px_rgba(var(--color-accent-rgb),0.6)]"
                   style={{
                     background: `linear-gradient(135deg, ${COLORS.accent}, ${COLORS.accentDk})`,
-                    color: "#0A0F1C",
+                    color: COLORS.bg,
                   }}
                 >
                   Upgrade to {meta.name}
@@ -240,7 +250,7 @@ export default function PlansPage() {
             </div>
           );
         })}
-      </div>
+      </AutoHoverGrid>
 
       <p className="text-[11px] text-center px-5" style={{ color: COLORS.t4 }}>
         Cancel anytime — you keep access until the end of your billing period.
