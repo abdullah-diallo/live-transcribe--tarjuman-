@@ -23,6 +23,7 @@ import {
 import { COLORS } from "@/lib/constants";
 import { SITE_NAME } from "@/lib/site";
 import { Icon } from "@/components/shared/icon";
+import { AutoHoverGrid } from "@/components/landing/auto-hover-grid";
 
 function Spinner() {
   return (
@@ -69,11 +70,10 @@ function PayForm({ submitLabel }: { submitLabel: string }) {
       <button
         type="submit"
         disabled={submitting}
-        className="w-full h-12 rounded-xl text-[14px] font-bold cursor-pointer transition-all duration-200 active:scale-[0.98] hover:brightness-110 disabled:opacity-50 disabled:hover:brightness-100"
+        className="w-full h-12 rounded-xl text-[14px] font-bold cursor-pointer transition-all duration-200 ease-out active:scale-[0.98] hover:-translate-y-0.5 hover:brightness-110 shadow-[0_0_20px_rgba(var(--color-accent-rgb),0.3)] hover:shadow-[0_0_30px_rgba(var(--color-accent-rgb),0.6)] disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:brightness-100"
         style={{
           background: `linear-gradient(135deg, ${COLORS.accent}, ${COLORS.accentDk})`,
-          color: "#0A0F1C",
-          boxShadow: `0 0 24px ${COLORS.accent}30`,
+          color: COLORS.bg,
         }}
       >
         {submitting ? "Processing…" : submitLabel}
@@ -98,12 +98,13 @@ function OrderSummary({ interval }: { interval: "month" | "year" }) {
       : "billed monthly";
 
   return (
+    // Card conventions: lift + accent border + glow, with data-hovercard so the
+    // same thing plays on touch. Border/background are classes because an
+    // inline style outranks a Tailwind hover: rule.
+    <AutoHoverGrid>
     <div
-      className="rounded-2xl p-4 mb-5"
-      style={{
-        background: COLORS.surface,
-        border: `1px solid ${COLORS.accent}30`,
-      }}
+      data-hovercard
+      className="group rounded-2xl p-4 mb-5 border border-[rgba(var(--color-accent-rgb),0.19)] bg-[var(--color-surface)] transition duration-200 ease-out will-change-transform hover:-translate-y-1 hover:border-[var(--color-accent)] hover:bg-[var(--color-surface-light)] hover:shadow-[0_14px_36px_rgba(var(--color-accent-rgb),0.2)]"
     >
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -152,6 +153,7 @@ function OrderSummary({ interval }: { interval: "month" | "year" }) {
         ))}
       </ul>
     </div>
+    </AutoHoverGrid>
   );
 }
 
@@ -196,9 +198,8 @@ function CheckoutInner() {
         <button
           type="button"
           onClick={() => router.back()}
-          className="w-9 h-9 rounded-lg grid place-items-center cursor-pointer"
+          className="w-9 h-9 rounded-lg grid place-items-center cursor-pointer border border-transparent bg-[var(--color-surface)] transition-all duration-200 ease-out hover:border-[var(--color-accent)] hover:bg-[var(--color-surface-light)] hover:shadow-[0_0_16px_rgba(var(--color-accent-rgb),0.25)] active:scale-95"
           aria-label="Back"
-          style={{ background: COLORS.surface }}
         >
           <Icon name="back" size={18} color={COLORS.t2} />
         </button>

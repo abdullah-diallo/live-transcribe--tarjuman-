@@ -25,17 +25,23 @@ export function hasStripeKey(): boolean {
 }
 
 /**
- * Dark Appearance for the embedded checkout, matched to the Tarjuman palette.
- * `theme: 'night'` is Stripe's dark base; the variables pin it to our exact
- * greens/surfaces so the card form reads as part of the app, not a white island.
+ * Dark Appearance for the embedded checkout, matched to the active palette.
+ * `theme: 'night'` is Stripe's dark base; every value below is read from COLORS
+ * so the form follows whichever palette is live rather than a pinned green.
+ *
+ * The payment-method rows (Card / Amazon Pay / Cash App Pay) render inside a
+ * cross-origin Stripe iframe, so our stylesheet cannot touch them — the hover
+ * lift/glow the rest of the app uses has to be expressed here, in Stripe's
+ * appearance rules, or those rows stay inert while everything around them
+ * animates.
  */
 export const DARK_APPEARANCE: Appearance = {
   theme: "night",
   variables: {
-    colorPrimary: COLORS.accent, // #2ECC71
-    colorBackground: COLORS.surface, // #0E1525
-    colorText: COLORS.w, // #F0F4F8
-    colorTextSecondary: COLORS.t2, // #B0BEC5
+    colorPrimary: COLORS.accent,
+    colorBackground: COLORS.surface,
+    colorText: COLORS.w,
+    colorTextSecondary: COLORS.t2,
     colorTextPlaceholder: COLORS.t4, // muted placeholder
     colorDanger: COLORS.red, // #EF4444
     fontFamily: '"DM Sans", system-ui, sans-serif',
@@ -47,7 +53,7 @@ export const DARK_APPEARANCE: Appearance = {
   // reads as part of Tarjuman rather than a generic Stripe form.
   rules: {
     ".Input": {
-      backgroundColor: COLORS.bg, // #060B18 (one step below the surface)
+      backgroundColor: COLORS.bg, // one step below the surface
       border: `1px solid ${COLORS.borderLight}`,
     },
     ".Input:focus": {
@@ -57,11 +63,21 @@ export const DARK_APPEARANCE: Appearance = {
     ".Tab, .Block": {
       backgroundColor: COLORS.bg,
       border: `1px solid ${COLORS.borderLight}`,
+      transition: "border-color 200ms ease, box-shadow 200ms ease",
     },
-    ".Tab:hover": { border: `1px solid ${COLORS.accent}` },
+    // Accent outline + glow, matching the app's hover convention. Stripe has no
+    // transform primitive here, so the lift is expressed as the glow alone.
+    ".Tab:hover": {
+      border: `1px solid ${COLORS.accent}`,
+      boxShadow: `0 0 18px ${COLORS.accent}3d`,
+    },
     ".Tab--selected": {
       border: `1px solid ${COLORS.accent}`,
-      boxShadow: `0 0 0 1px ${COLORS.accent}`,
+      boxShadow: `0 0 0 1px ${COLORS.accent}, 0 0 22px ${COLORS.accent}4d`,
+    },
+    ".Tab--selected:hover": {
+      border: `1px solid ${COLORS.accent}`,
+      boxShadow: `0 0 0 1px ${COLORS.accent}, 0 0 28px ${COLORS.accent}66`,
     },
     ".Label": { color: COLORS.t2 },
   },
