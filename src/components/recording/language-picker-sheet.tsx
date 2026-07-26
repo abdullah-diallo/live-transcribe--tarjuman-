@@ -64,7 +64,7 @@ export function LanguagePickerSheet({
           style={{
             // Light dim only — leave the heavy blur to the sheet so the
             // sheet's backdrop-filter has interesting content to refract.
-            background: "rgba(6, 11, 24, 0.4)",
+            background: "rgba(var(--color-bg-rgb),0.4)",
           }}
         />
         <Dialog.Content

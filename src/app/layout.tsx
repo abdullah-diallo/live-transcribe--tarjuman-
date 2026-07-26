@@ -3,6 +3,7 @@ import { DM_Sans, JetBrains_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
+import { ACTIVE_PALETTE, ACTIVE_PALETTE_NAME } from "@/lib/palettes";
 import { ConvexClientProvider } from "@/components/providers/convex-provider";
 import {
   SITE_NAME,
@@ -84,7 +85,9 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#060B18",
+  // Mobile browser chrome (address bar / PWA shell). Follows the active
+  // palette so the chrome doesn't stay near-black around a violet page.
+  themeColor: ACTIVE_PALETTE.bg,
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -99,6 +102,11 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      // Drives the `--color-*` overrides in globals.css. Read from the SAME
+      // constant as the COLORS object, so inline styles and CSS variables can
+      // never render two different palettes. Resolves to "tarjuman" (the
+      // shipped green theme) everywhere except localhost.
+      data-palette={ACTIVE_PALETTE_NAME}
       className={`${dmSans.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
       <body

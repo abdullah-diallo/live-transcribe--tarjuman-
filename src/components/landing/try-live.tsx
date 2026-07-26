@@ -643,7 +643,7 @@ export function TryLive() {
               ? "animate-in fade-in"
               : "animate-out fade-out pointer-events-none"
           }`}
-          style={{ background: "rgba(6,11,24,0.82)", backdropFilter: "blur(6px)" }}
+          style={{ background: "rgba(var(--color-bg-rgb),0.82)", backdropFilter: "blur(6px)" }}
         >
           <div className="max-w-sm">
             <div className="text-lg font-bold" style={{ color: COLORS.w }}>

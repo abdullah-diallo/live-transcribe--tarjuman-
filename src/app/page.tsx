@@ -36,7 +36,7 @@ export default function Home() {
           className="hero-glow pointer-events-none absolute left-1/2 top-1/3 -z-10 h-[640px] w-[640px] -translate-x-1/2 -translate-y-1/2 rounded-full"
           style={{
             background:
-              "radial-gradient(circle, rgba(46,204,113,0.16), rgba(46,204,113,0) 70%)",
+              "radial-gradient(circle, rgba(var(--color-accent-rgb),0.16), rgba(var(--color-accent-rgb),0) 70%)",
           }}
         />
 
@@ -66,7 +66,7 @@ export default function Home() {
                 <TryItFree />
                 <a
                   href="#features"
-                  className="px-5 py-3 rounded-xl font-semibold border transition-all duration-200 text-[var(--color-text-2)] border-[var(--color-border-light)] hover:bg-[var(--color-accent)] hover:text-[#0A0F1C] hover:border-[var(--color-accent)] hover:-translate-y-0.5 hover:shadow-[0_0_28px_rgba(46,204,113,0.5)]"
+                  className="px-5 py-3 rounded-xl font-semibold border transition-all duration-200 text-[var(--color-text-2)] border-[var(--color-border-light)] hover:bg-[var(--color-accent)] hover:text-[#0A0F1C] hover:border-[var(--color-accent)] hover:-translate-y-0.5 hover:shadow-[0_0_28px_rgba(var(--color-accent-rgb),0.5)]"
                 >
                   <T k="lp.seeHow" />
                 </a>

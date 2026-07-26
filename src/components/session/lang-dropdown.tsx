@@ -102,7 +102,7 @@ export function LangDropdown({
                     onChange(l.code);
                     setOpen(false);
                   }}
-                  className="w-full px-3 py-2 flex items-center justify-between gap-3 text-left text-[13px] font-semibold cursor-pointer rounded-lg border transition-all duration-150 hover:border-[var(--color-accent)] hover:bg-[var(--color-accent-soft)] hover:shadow-[0_0_16px_rgba(46,204,113,0.35)]"
+                  className="w-full px-3 py-2 flex items-center justify-between gap-3 text-left text-[13px] font-semibold cursor-pointer rounded-lg border transition-all duration-150 hover:border-[var(--color-accent)] hover:bg-[var(--color-accent-soft)] hover:shadow-[0_0_16px_rgba(var(--color-accent-rgb),0.35)]"
                   style={{
                     ...(selected
                       ? { borderColor: COLORS.accent, background: COLORS.accentSoft }

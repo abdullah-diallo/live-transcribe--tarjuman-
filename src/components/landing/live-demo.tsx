@@ -165,7 +165,7 @@ export function LiveDemo() {
         className="pointer-events-none absolute inset-0 -z-10 blur-3xl opacity-60"
         style={{
           background:
-            "radial-gradient(60% 50% at 50% 30%, rgba(46,204,113,0.18), transparent 70%)",
+            "radial-gradient(60% 50% at 50% 30%, rgba(var(--color-accent-rgb),0.18), transparent 70%)",
         }}
       />
 

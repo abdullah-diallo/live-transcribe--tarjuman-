@@ -23,12 +23,59 @@
   --color-text-2: #B0BEC5;
   --color-text-3: #6B7D8D;
   --color-text-4: #455A64;
+  /* Accent at ~20% — for glows/shadows, so no rule has to hardcode the accent
+     channel values (which would survive a palette swap and look wrong). */
+  --color-accent-glow: rgba(46, 204, 113, 0.2);
+  /* Accent as bare RGB channels. Lets any rule compose its own alpha with
+     rgba(var(--color-accent-rgb), .35) instead of baking in the channel
+     values, which is what made ~28 glow/shadow rules survive a palette swap
+     as green halos around non-green buttons. */
+  --color-accent-rgb: 46, 204, 113;
+  --color-bg-rgb: 6, 11, 24;
+  --color-surface-rgb: 14, 21, 37;
   --font-sans: var(--font-dm-sans);
   --font-mono: var(--font-jetbrains-mono);
 }
 
 :root {
   color-scheme: dark;
+}
+
+/* ── SUNSET palette (localhost only) ──────────────────────────────────────
+   Orange on deep violet, from the supplied ramp. The @theme block above is
+   the SHIPPED palette and is deliberately left untouched, so production is
+   unaffected and reverting is just removing the html attribute.
+
+   `<html data-palette>` is set from ACTIVE_PALETTE_NAME in the root layout,
+   which is the same value that drives the COLORS object — the inline styles
+   and these custom properties therefore can never disagree.
+
+   Selector is `html[data-palette=...]` (0,1,1) so it outranks the `:root`
+   (0,1,0) that Tailwind emits for @theme, regardless of layer order.
+   Values mirror PALETTE_SUNSET in @/lib/palettes — keep the two in sync. */
+html[data-palette="sunset"] {
+  --color-bg: #240046;
+  --color-surface: #3c096c;
+  --color-surface-light: #5a189a;
+  --color-border-faint: rgba(255, 255, 255, 0.08);
+  --color-border-light: rgba(255, 255, 255, 0.14);
+  --color-accent: #ff9100;
+  --color-accent-dk: #ff6d00;
+  --color-accent-soft: rgba(255, 145, 0, 0.12);
+  --color-red-main: #ef4444;
+  --color-red-soft: rgba(239, 68, 68, 0.12);
+  --color-amber-main: #ff6d00;
+  --color-amber-soft: rgba(255, 109, 0, 0.12);
+  --color-blue-main: #9d4edd;
+  --color-blue-soft: rgba(157, 78, 221, 0.14);
+  --color-text-1: #f7f2ff;
+  --color-text-2: #cdbde6;
+  --color-text-3: #9781b8;
+  --color-text-4: #6b5590;
+  --color-accent-glow: rgba(255, 145, 0, 0.22);
+  --color-accent-rgb: 255, 145, 0;
+  --color-bg-rgb: 36, 0, 70;
+  --color-surface-rgb: 60, 9, 108;
 }
 
 html,
@@ -181,7 +228,7 @@ html {
   [data-hovercard].touch-hover {
     transform: translateY(-6px);
     border-color: var(--color-accent) !important;
-    box-shadow: 0 14px 36px rgba(46, 204, 113, 0.2);
+    box-shadow: 0 14px 36px var(--color-accent-glow);
   }
 }
 @media (prefers-reduced-motion: reduce) {

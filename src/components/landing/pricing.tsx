@@ -55,7 +55,7 @@ export function Pricing() {
           return (
             <Reveal key={plan} delay={80 + i * 90} className="h-full">
               <div
-                className="group relative h-full flex flex-col rounded-2xl border p-6 transition duration-200 hover:-translate-y-1.5 hover:shadow-[0_14px_36px_rgba(46,204,113,0.2)]"
+                className="group relative h-full flex flex-col rounded-2xl border p-6 transition duration-200 hover:-translate-y-1.5 hover:shadow-[0_14px_36px_rgba(var(--color-accent-rgb),0.2)]"
                 style={{
                   background: featured
                     ? "var(--color-surface-light)"
@@ -129,7 +129,7 @@ export function Pricing() {
                         ? {
                             background: "var(--color-accent)",
                             color: "#0A0F1C",
-                            boxShadow: "0 0 24px rgba(46,204,113,0.3)",
+                            boxShadow: "0 0 24px rgba(var(--color-accent-rgb),0.3)",
                           }
                         : {
                             background: "transparent",

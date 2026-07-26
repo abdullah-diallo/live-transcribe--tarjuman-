@@ -24,7 +24,7 @@ export function UseCases() {
             <Reveal key={titleKey} delay={60 + i * 80} className="h-full">
               <div
                 data-hovercard
-                className="group relative h-full overflow-hidden rounded-2xl border border-[var(--color-border-light)] bg-[var(--color-surface)] p-5 transition duration-200 hover:-translate-y-1.5 hover:border-[var(--color-accent)] hover:bg-[var(--color-surface-light)] hover:shadow-[0_14px_36px_rgba(46,204,113,0.2)]"
+                className="group relative h-full overflow-hidden rounded-2xl border border-[var(--color-border-light)] bg-[var(--color-surface)] p-5 transition duration-200 hover:-translate-y-1.5 hover:border-[var(--color-accent)] hover:bg-[var(--color-surface-light)] hover:shadow-[0_14px_36px_rgba(var(--color-accent-rgb),0.2)]"
               >
                 {/* accent bar that grows in from the left edge on hover */}
                 <span className="absolute left-0 top-0 h-full w-[3px] origin-top scale-y-0 bg-[var(--color-accent)] transition-transform duration-300 group-hover:scale-y-100" />

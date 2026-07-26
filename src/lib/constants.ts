@@ -1,3 +1,5 @@
+import { ACTIVE_PALETTE, type Palette } from "./palettes";
+
 export const LANGUAGES = [
   // Tier 1 — Excellent (code-switching supported)
   { code: "en", name: "English", native: "English", rtl: false },
@@ -35,26 +37,12 @@ export const LANGUAGES = [
 
 export type LanguageCode = (typeof LANGUAGES)[number]["code"];
 
-export const COLORS = {
-  bg: "#060B18",
-  surface: "#0E1525",
-  surfaceLight: "#151D30",
-  border: "rgba(255,255,255,0.06)",
-  borderLight: "rgba(255,255,255,0.1)",
-  accent: "#2ECC71",
-  accentDk: "#22A85A",
-  accentSoft: "rgba(46,204,113,0.1)",
-  red: "#EF4444",
-  redSoft: "rgba(239,68,68,0.1)",
-  amber: "#F59E0B",
-  amberSoft: "rgba(245,158,11,0.1)",
-  blue: "#3B82F6",
-  blueSoft: "rgba(59,130,246,0.1)",
-  w: "#F0F4F8",
-  t2: "#B0BEC5",
-  t3: "#6B7D8D",
-  t4: "#455A64",
-} as const;
+// The live palette. Both palettes — the shipped green-on-near-black one and
+// the localhost-only SUNSET experiment — are defined in @/lib/palettes, so
+// nothing here is lost when we try a new look and switching back is one edit.
+// Same object shape as before, so every `style={{ color: COLORS.t3 }}` across
+// the app keeps working untouched.
+export const COLORS: Palette = ACTIVE_PALETTE;
 
 // The landing pricing section + "Pricing" nav link are built but NOT public
 // yet. Show them only on localhost (next dev → NODE_ENV "development"); they

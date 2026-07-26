@@ -85,7 +85,7 @@ export function AccountMenu({ dropUp = false }: { dropUp?: boolean } = {}) {
           border: `1px solid ${lit ? COLORS.accent : `${COLORS.accent}40`}`,
           color: COLORS.accent,
           boxShadow: lit
-            ? `0 0 0 1px ${COLORS.accent}, 0 0 16px rgba(46,204,113,0.45)`
+            ? `0 0 0 1px ${COLORS.accent}, 0 0 16px rgba(var(--color-accent-rgb),0.45)`
             : "0 0 0 rgba(0,0,0,0)",
           transition:
             "border-color 200ms ease, box-shadow 200ms ease, transform 150ms ease",

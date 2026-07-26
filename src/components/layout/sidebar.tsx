@@ -117,7 +117,7 @@ export function Sidebar() {
                   className={`relative z-10 flex items-center gap-3 h-11 px-3 rounded-xl text-sm font-semibold border border-transparent transition-all duration-200 ${
                     active
                       ? ""
-                      : "hover:border-[var(--color-accent)] hover:bg-[var(--color-accent-soft)] hover:shadow-[0_0_16px_rgba(46,204,113,0.35)]"
+                      : "hover:border-[var(--color-accent)] hover:bg-[var(--color-accent-soft)] hover:shadow-[0_0_16px_rgba(var(--color-accent-rgb),0.35)]"
                   }`}
                   style={{ color: active ? COLORS.accent : COLORS.t2 }}
                 >

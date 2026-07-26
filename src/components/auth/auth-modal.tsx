@@ -31,7 +31,7 @@ export function AuthModal({
           className="fixed inset-0 z-[200] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0"
           style={{
             // Dim + heavy blur so the page behind the popup fully recedes.
-            background: "rgba(6, 11, 24, 0.55)",
+            background: "rgba(var(--color-bg-rgb),0.55)",
             backdropFilter: "blur(24px)",
             WebkitBackdropFilter: "blur(24px)",
           }}

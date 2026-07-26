@@ -97,7 +97,7 @@ export function LocaleSwitcher({
           border: `1px solid ${lit ? COLORS.accent : COLORS.borderLight}`,
           color: COLORS.w,
           boxShadow: lit
-            ? `0 0 0 1px ${COLORS.accent}, 0 0 16px rgba(46,204,113,0.4)`
+            ? `0 0 0 1px ${COLORS.accent}, 0 0 16px rgba(var(--color-accent-rgb),0.4)`
             : "0 0 0 rgba(0,0,0,0)",
           transition:
             "border-color 200ms ease, box-shadow 200ms ease, background 200ms ease",
@@ -202,9 +202,9 @@ export function LocaleSwitcher({
                   // softer persistent green outline so the current language is
                   // obvious at a glance. Border lives in classes (not inline) so
                   // the hover :hover rule can win.
-                  className={`w-full px-3 py-2 flex items-center justify-between gap-3 text-left text-[13px] font-semibold cursor-pointer rounded-lg border transition-all duration-150 hover:border-[var(--color-accent)] hover:bg-[var(--color-accent-soft)] hover:shadow-[0_0_18px_rgba(46,204,113,0.4)] ${
+                  className={`w-full px-3 py-2 flex items-center justify-between gap-3 text-left text-[13px] font-semibold cursor-pointer rounded-lg border transition-all duration-150 hover:border-[var(--color-accent)] hover:bg-[var(--color-accent-soft)] hover:shadow-[0_0_18px_rgba(var(--color-accent-rgb),0.4)] ${
                     selected
-                      ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] shadow-[0_0_14px_rgba(46,204,113,0.28)]"
+                      ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] shadow-[0_0_14px_rgba(var(--color-accent-rgb),0.28)]"
                       : "border-transparent"
                   }`}
                   style={{ color: selected ? COLORS.accent : COLORS.t2 }}

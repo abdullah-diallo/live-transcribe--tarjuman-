@@ -40,7 +40,7 @@ function LangButton({
         background: COLORS.surfaceLight,
         border: `1px solid ${hover ? COLORS.accent : COLORS.borderLight}`,
         boxShadow: hover
-          ? `0 0 0 1px ${COLORS.accent}, 0 8px 28px rgba(46,204,113,0.22)`
+          ? `0 0 0 1px ${COLORS.accent}, 0 8px 28px rgba(var(--color-accent-rgb),0.22)`
           : "0 0 0 rgba(0,0,0,0)",
         transition:
           "border-color 220ms ease, box-shadow 220ms ease, background 220ms ease",

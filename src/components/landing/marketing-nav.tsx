@@ -99,7 +99,7 @@ export function MarketingNav() {
       <nav
         className="pointer-events-auto mx-auto max-w-5xl rounded-2xl px-3.5 sm:px-5 h-14 flex items-center justify-between gap-4 transition-all duration-300"
         style={{
-          background: scrolled ? "rgba(14,21,37,0.7)" : "rgba(14,21,37,0.42)",
+          background: scrolled ? "rgba(var(--color-surface-rgb),0.7)" : "rgba(var(--color-surface-rgb),0.42)",
           backdropFilter: "blur(18px) saturate(160%)",
           WebkitBackdropFilter: "blur(18px) saturate(160%)",
           borderWidth: 1,
@@ -114,7 +114,7 @@ export function MarketingNav() {
       >
         {/* Brand */}
         <Link href="/" className="flex items-center gap-2.5 shrink-0 group">
-          <span className="w-9 h-9 rounded-xl bg-[var(--color-accent)] grid place-items-center shadow-[0_0_24px_rgba(46,204,113,0.4)] transition-transform group-hover:scale-105">
+          <span className="w-9 h-9 rounded-xl bg-[var(--color-accent)] grid place-items-center shadow-[0_0_24px_rgba(var(--color-accent-rgb),0.4)] transition-transform group-hover:scale-105">
             <svg
               width="18"
               height="18"
@@ -158,7 +158,7 @@ export function MarketingNav() {
             <button
               type="button"
               onClick={() => router.push("/record")}
-              className="px-4 py-2 rounded-xl text-sm font-bold cursor-pointer transition-all duration-200 active:scale-95 bg-[var(--color-accent)] text-[#0A0F1C] hover:brightness-110 hover:-translate-y-0.5 shadow-[0_0_20px_rgba(46,204,113,0.3)] hover:shadow-[0_0_30px_rgba(46,204,113,0.6)]"
+              className="px-4 py-2 rounded-xl text-sm font-bold cursor-pointer transition-all duration-200 active:scale-95 bg-[var(--color-accent)] text-[#0A0F1C] hover:brightness-110 hover:-translate-y-0.5 shadow-[0_0_20px_rgba(var(--color-accent-rgb),0.3)] hover:shadow-[0_0_30px_rgba(var(--color-accent-rgb),0.6)]"
             >
               {t("lp.openRecorder")}
             </button>
@@ -178,7 +178,7 @@ export function MarketingNav() {
                 onClick={() => openAuth("signUp")}
                 onPointerEnter={preload}
                 onFocus={preload}
-                className="px-4 py-2 rounded-xl text-sm font-bold cursor-pointer transition-all duration-200 active:scale-95 bg-[var(--color-accent)] text-[#0A0F1C] hover:brightness-110 hover:-translate-y-0.5 shadow-[0_0_20px_rgba(46,204,113,0.3)] hover:shadow-[0_0_30px_rgba(46,204,113,0.6)]"
+                className="px-4 py-2 rounded-xl text-sm font-bold cursor-pointer transition-all duration-200 active:scale-95 bg-[var(--color-accent)] text-[#0A0F1C] hover:brightness-110 hover:-translate-y-0.5 shadow-[0_0_20px_rgba(var(--color-accent-rgb),0.3)] hover:shadow-[0_0_30px_rgba(var(--color-accent-rgb),0.6)]"
               >
                 {t("lp.getStarted")}
               </button>
