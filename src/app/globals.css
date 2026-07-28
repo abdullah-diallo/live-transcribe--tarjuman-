@@ -208,6 +208,14 @@ html {
 }
 .hero-glow {
   animation: hero-glow-drift 16s ease-in-out infinite;
+  /* Own compositing layer. This element animates forever directly beneath the
+     sticky, backdrop-filtered nav; without its own layer every frame dirties
+     the region the nav samples, which is what produced the nav's ghost trails.
+     `will-change` ONLY — do not add a static `transform` here: this rule is
+     unlayered and would beat the element's -translate-x-1/2 / -translate-y-1/2
+     utilities, throwing the glow off-centre in the reduced-motion case where
+     the animation (which carries its own centring) is disabled. */
+  will-change: transform;
 }
 @media (prefers-reduced-motion: reduce) {
   .hero-glow {

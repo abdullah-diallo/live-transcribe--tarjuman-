@@ -97,11 +97,25 @@ export function MarketingNav() {
     // the interactive surface.
     <header className="sticky top-0 z-50 px-3 pt-3 pointer-events-none">
       <nav
-        className="pointer-events-auto mx-auto max-w-5xl rounded-2xl px-3.5 sm:px-5 h-14 flex items-center justify-between gap-4 transition-all duration-300"
+        className="pointer-events-auto mx-auto max-w-5xl rounded-2xl px-3.5 sm:px-5 h-14 flex items-center justify-between gap-4 transition-[background-color,border-color,box-shadow] duration-300 ease-out"
         style={{
           background: scrolled ? "rgba(var(--color-surface-rgb),0.7)" : "rgba(var(--color-surface-rgb),0.42)",
           backdropFilter: "blur(18px) saturate(160%)",
           WebkitBackdropFilter: "blur(18px) saturate(160%)",
+          // GHOSTING FIX. This bar is sticky, blurs whatever scrolls under it,
+          // and sits directly above the hero's 640px glow, which animates its
+          // transform forever. That combination makes the compositor re-sample
+          // the backdrop every frame, and it was leaving STALE PIXELS — a
+          // second copy of the brand and the links smeared outside the rounded
+          // island. Promoting the bar to its own layer gives it a private
+          // backing store so old paints can't survive in it, and `isolation`
+          // stops it blending with layers underneath. (Deliberately NOT
+          // `contain: paint`: that would clip the brand mark's outer glow.)
+          transform: "translateZ(0)",
+          WebkitTransform: "translateZ(0)",
+          isolation: "isolate",
+          willChange: "backdrop-filter",
+          backfaceVisibility: "hidden",
           borderWidth: 1,
           borderStyle: "solid",
           borderColor: scrolled
