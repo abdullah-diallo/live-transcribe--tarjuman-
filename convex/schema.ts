@@ -97,6 +97,77 @@ export default defineSchema({
     .index("by_session", ["sessionId"])
     .index("by_session_seg", ["sessionId", "segId"]),
 
+  // ─── Ask Tarjuman: Islamic AI chat ──────────────────────────────────────
+  //
+  // One row per conversation, METADATA ONLY — messages live in the
+  // `chatMessages` child table below, for exactly the reason
+  // `transcriptSegments` exists. A conversation is unbounded: an inline array
+  // rewrites the whole document on every send and a long chat eventually
+  // crosses Convex's 1 MiB per-document cap, after which every append throws
+  // and the chat silently stops persisting mid-conversation.
+  //
+  // messageCount / firstMessageText / lastMessagePreview are denormalized so a
+  // chat list renders without reading chatMessages at all (same pattern, same
+  // rationale, as sessions.segmentCount / sessions.firstSegmentText).
+  //
+  // There is deliberately NO `createChat` mutation — a chat is created lazily
+  // by the first appendUserMessage. That structurally eliminates the empty
+  // phantom-row problem `sessions` still carries (createSession-on-prewarm,
+  // then filtered out everywhere by `segmentCount > 0`).
+  chats: defineTable({
+    userId: v.id("users"),
+    // Derived from the first user message; user-editable via renameChat.
+    title: v.optional(v.string()),
+    firstMessageText: v.optional(v.string()),
+    // Newest message, truncated at write time. Truncated deliberately: an
+    // untruncated 4000-char message would bloat every list query's read set.
+    lastMessagePreview: v.optional(v.string()),
+    messageCount: v.number(),
+    // Bumped on every append — drives the recency-ordered chat list.
+    lastMessageAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_recent", ["userId", "lastMessageAt"]),
+
+  chatMessages: defineTable({
+    chatId: v.id("chats"),
+    // Denormalized from the parent. Two load-bearing reasons:
+    //  1. The per-user monthly message fuse needs an indexed (user, time) range
+    //     read. Counting via chats would be O(chats) reads per gate check on
+    //     every single message.
+    //  2. users.deleteAccount can drain a user's messages directly instead of
+    //     fanning out one query per chat (GDPR erasure at O(messages)).
+    userId: v.id("users"),
+    role: v.union(v.literal("user"), v.literal("assistant")),
+    content: v.string(),
+    // Client-generated, stable per send. Dedupes a double-tapped Send or a
+    // retried persist — same role as transcriptSegments.segId.
+    clientId: v.string(),
+    // Assistant-only bookkeeping.
+    model: v.optional(v.string()),
+    finish: v.optional(
+      v.union(v.literal("ok"), v.literal("truncated"), v.literal("error"))
+    ),
+    // Citations resolved by the server-side sunnah.com / quran.com pass, so the
+    // UI renders a sources strip without re-parsing the markdown.
+    citations: v.optional(
+      v.array(
+        v.object({
+          source: v.union(v.literal("sunnah"), v.literal("quran")),
+          label: v.string(),
+          url: v.string(),
+          verified: v.boolean(),
+        })
+      )
+    ),
+    createdAt: v.number(),
+  })
+    .index("by_chat", ["chatId"])
+    .index("by_chat_client", ["chatId", "clientId"])
+    .index("by_user_created", ["userId", "createdAt"]),
+
   // Per-user app preferences. One row per user (upserted). All fields optional
   // so the row can be created lazily and new prefs can be added without a
   // migration. Backed by Convex (not localStorage) so settings sync across

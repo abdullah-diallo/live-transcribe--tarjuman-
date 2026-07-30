@@ -19,6 +19,16 @@ const TABS: { id: string; icon: IconName; labelKey: MessageKey; href: string; ma
     matches: (p) => p === "/record",
   },
   {
+    id: "ask",
+    icon: "chat",
+    labelKey: "nav.ask",
+    href: "/ask",
+    // MUST cover sub-routes. Without the prefix, a future /ask/[chatId] makes
+    // findIndex return -1, Math.max(..., 0) clamps it to 0, and the lens flies
+    // back to Record while the user is sitting in a conversation.
+    matches: (p) => p === "/ask" || p.startsWith("/ask/"),
+  },
+  {
     id: "history",
     icon: "history",
     labelKey: "nav.history",
@@ -27,10 +37,17 @@ const TABS: { id: string; icon: IconName; labelKey: MessageKey; href: string; ma
   },
 ];
 
-// Fixed slot width so the lens position is just index × width. Fits both
-// 11px-semibold labels with the same side padding the old px-7 tabs produced
-// (~100px rendered). Revisit if a label changes or a third tab is added.
-const TAB_WIDTH = 100;
+// Fixed slot width so the lens position is just index × width. Everything else
+// in this file (lens width, resting transform, flight from/to, the mid-flight
+// swell) is derived from it — change only this constant.
+//
+// 92, not 100, now that there are three tabs: 3 × 92 = 276 content + 10 padding
+// + 2 border = 288px outer, leaving 43.5px of gutter per side at 375px, 36px at
+// 360px, and 16px at 320px. At 100 the capsule would be 312px wide, i.e. 4px of
+// gutter on a 320px viewport — which reads as broken and can clip under
+// safe-area rounding. 92 still leaves ~84px of label room after px-1, about 14
+// characters at 11px semibold, which fits every curated locale.
+const TAB_WIDTH = 92;
 // The lens sits 4px inside the capsule while the tab row sits 5px inside —
 // the lens reads slightly larger than its slot, like iOS 26's selection
 // lozenge that nearly fills the bar's height.

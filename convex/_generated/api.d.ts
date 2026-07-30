@@ -10,7 +10,9 @@
 
 import type * as admin from "../admin.js";
 import type * as auth from "../auth.js";
+import type * as authGuards from "../authGuards.js";
 import type * as billingLimits from "../billingLimits.js";
+import type * as chats from "../chats.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as passwordReset from "../passwordReset.js";
@@ -30,7 +32,9 @@ import type {
 declare const fullApi: ApiFromModules<{
   admin: typeof admin;
   auth: typeof auth;
+  authGuards: typeof authGuards;
   billingLimits: typeof billingLimits;
+  chats: typeof chats;
   crons: typeof crons;
   http: typeof http;
   passwordReset: typeof passwordReset;

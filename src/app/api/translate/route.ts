@@ -4,6 +4,7 @@ import {
   ISLAMIC_FEW_SHOT_EXAMPLES,
 } from "@/lib/islamic-terminology";
 import { requireAuthFromHeader, checkRateLimit } from "@/lib/api-auth";
+import { META_SENTINEL } from "@/lib/anthropic-stream";
 import { verifyAndEnrich } from "@/lib/sunnah";
 import { verifyAndEnrichQuran } from "@/lib/quran";
 import { isOffLanguageScript } from "@/lib/script";
@@ -229,9 +230,10 @@ const MERGE_MARKER = "<<<MERGE>>>";
 
 // Separates the streamed plain-translation text from the final metadata JSON
 // trailer (enriched text + merge/filtered/error). The U+241E control char can
-// never appear in translated prose, so the client splits on it safely. MUST
-// byte-match the constant in src/hooks/use-translator.ts.
-const META_SENTINEL = "\n␞__TARJUMAN_META__␞\n";
+// never appear in translated prose, so the client splits on it safely.
+// Now imported from @/lib/anthropic-stream — it was duplicated here and in
+// use-translator.ts under a "MUST byte-match" comment, and /api/chat made it a
+// third consumer, which is exactly when that comment becomes a bug.
 
 function parseMergeDirective(
   raw: string,

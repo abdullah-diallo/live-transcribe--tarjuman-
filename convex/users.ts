@@ -1,5 +1,6 @@
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import { auth } from "./auth";
 
 /**
@@ -122,6 +123,22 @@ export const deleteAccount = mutation({
       await ctx.db.delete(session._id);
     }
 
+    // Ask Tarjuman chats + their messages. Messages carry a denormalized
+    // `userId` precisely so erasure is one indexed range read instead of a
+    // fan-out per chat. Bounded batches + a scheduled drain so a heavy chat
+    // user's deletion can't blow the per-transaction write budget and leave
+    // the account half-erased.
+    const chats = await ctx.db
+      .query("chats")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+    for (const chat of chats) {
+      await ctx.db.delete(chat._id);
+    }
+    await ctx.scheduler.runAfter(0, internal.users.purgeChatMessagesForUser, {
+      userId,
+    });
+
     // Delete account-link rows so the email/Google identity can be re-used
     // on a fresh signup. authTables's `authAccounts` is keyed by the user.
     const accounts = await ctx.db
@@ -179,5 +196,34 @@ export const deleteAccount = mutation({
     }
 
     await ctx.db.delete(userId);
+  },
+});
+
+/**
+ * Drain a deleted user's chat messages in bounded batches.
+ *
+ * Scheduled by deleteAccount rather than inlined: a heavy chat user can have
+ * thousands of message rows, and deleting them inside the same transaction as
+ * the auth-table cleanup risks blowing the per-transaction write budget — which
+ * would abort the WHOLE deletion and leave the account un-erased. Self-
+ * reschedules until the range is empty.
+ */
+const PURGE_BATCH = 200;
+
+export const purgeChatMessagesForUser = internalMutation({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("chatMessages")
+      .withIndex("by_user_created", (q) => q.eq("userId", args.userId))
+      .take(PURGE_BATCH);
+    for (const r of rows) await ctx.db.delete(r._id);
+    if (rows.length === PURGE_BATCH) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.users.purgeChatMessagesForUser,
+        { userId: args.userId }
+      );
+    }
   },
 });

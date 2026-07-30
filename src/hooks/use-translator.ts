@@ -4,10 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuthToken } from "@convex-dev/auth/react";
 import type { LiveSegment } from "@/types";
 import { looksLikeMetaCommentary } from "@/lib/translation-guard";
-
-// Matches the sentinel in src/app/api/translate/route.ts — separates the
-// streamed plain-translation deltas from the final metadata JSON trailer.
-const META_SENTINEL = "\n␞__TARJUMAN_META__␞\n";
+// Separates the streamed plain-translation deltas from the final metadata JSON
+// trailer. Single source of truth now — this used to be a hand-copied constant
+// that had to byte-match the server's.
+import { META_SENTINEL } from "@/lib/stream-protocol";
 
 export interface UseTranslatorOptions {
   segments: LiveSegment[];

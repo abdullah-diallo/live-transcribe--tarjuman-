@@ -27,6 +27,12 @@ const NAV: {
 }[] = [
   { icon: "mic", labelKey: "nav.record", href: "/record", matches: (p) => p === "/record" },
   {
+    icon: "chat",
+    labelKey: "nav.ask",
+    href: "/ask",
+    matches: (p) => p === "/ask" || p.startsWith("/ask/"),
+  },
+  {
     icon: "history",
     labelKey: "nav.history",
     href: "/history",

@@ -123,22 +123,43 @@ const SUPPORTED_EDITIONS = new Set([
 
 // Fetch one hadith's text. Returns the (trimmed) text, "" when the file 200s
 // but has no usable text, or null on a 404 (genuinely no such number).
+//
+// One retry on a transient failure. Without it, verification is measurably
+// flaky under concurrency: an answer citing three hadith fans out six requests
+// to GitHub raw at once, and when a couple exceed the timeout the citations are
+// marked "— unverified" even though they're genuine. The failure is safe (never
+// presents a bad citation as authentic) but NOT harmless — a user who keeps
+// seeing "unverified" on real hadith learns to ignore the marker, which is the
+// only thing standing between them and a fabricated one.
 async function fetchBody(
   edition: string,
-  number: string
+  number: string,
+  timeoutMs: number
 ): Promise<string | null> {
-  const res = await fetch(`${CDN_BASE}/${edition}/${number}.json`, {
-    signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
-  });
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const body = (await res.json()) as FawazHadithResponse;
-  return body.hadiths?.[0]?.text?.trim() ?? "";
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(`${CDN_BASE}/${edition}/${number}.json`, {
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      // A 404 is an ANSWER, not a failure — the number doesn't exist. Return
+      // immediately; retrying it would just double the latency of the common
+      // hallucinated-citation path.
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const body = (await res.json()) as FawazHadithResponse;
+      return body.hadiths?.[0]?.text?.trim() ?? "";
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
 }
 
 export async function lookupHadith(
   slug: string,
-  number: string
+  number: string,
+  timeoutMs: number = LOOKUP_TIMEOUT_MS
 ): Promise<CacheEntry> {
   const key = `${slug}:${number}`;
   const cached = lookupCache.get(key);
@@ -156,8 +177,8 @@ export async function lookupHadith(
     // otherwise doubled worst-case latency on the translate hot path (~3s → ~6s
     // per hadith). English stays the sole rejection path; Arabic errors are
     // swallowed and never block the verified English.
-    const arP = fetchBody(`ara-${slug}`, number).catch(() => "");
-    const en = await fetchBody(`eng-${slug}`, number);
+    const arP = fetchBody(`ara-${slug}`, number, timeoutMs).catch(() => "");
+    const en = await fetchBody(`eng-${slug}`, number, timeoutMs);
     if (en === null) {
       // 404 — the cited number doesn't exist (hallucinated). Strip it.
       const entry: CacheEntry = { kind: "not-found" };
@@ -269,7 +290,17 @@ function bodyOverlapFraction(lead: string, body: string): number {
  *
  * `skipped` is true only when there were no citations to process.
  */
-export async function verifyAndEnrich(text: string): Promise<{
+export async function verifyAndEnrich(
+  text: string,
+  /**
+   * Per-lookup network budget. Defaults to the tight value tuned for
+   * /api/translate, which runs this on the hot path once per transcript segment
+   * while the user watches. /api/chat runs it AFTER the answer has finished
+   * streaming — the user is already reading — so it passes a longer budget and
+   * trades a little latency for citations that actually resolve.
+   */
+  timeoutMs: number = LOOKUP_TIMEOUT_MS
+): Promise<{
   text: string;
   citations: VerifiedCitation[];
   skipped: boolean;
@@ -289,7 +320,7 @@ export async function verifyAndEnrich(text: string): Promise<{
   // like Musnad Ahmad) resolve to "unknown" and are marked "— unverified"
   // below — never presented as authentic.
   const results: CacheEntry[] = await Promise.all(
-    matches.map((m) => lookupHadith(m.slug, m.number))
+    matches.map((m) => lookupHadith(m.slug, m.number, timeoutMs))
   );
 
   // Walk the original text and build the enriched one piece by piece.

@@ -99,6 +99,56 @@ export async function getUsageFromHeader(
   }
 }
 
+export type ChatHistoryResult =
+  | { ok: true; messages: { role: "user" | "assistant"; content: string }[] }
+  | { ok: false; reason: "not_found" | "unavailable" };
+
+/**
+ * The caller's chat history, model-shaped and already capped by Convex.
+ *
+ * /api/chat calls this instead of accepting message history in the request
+ * body: a client that could supply `messages[]` could inject arbitrary text
+ * into a Claude Opus 4.8 call, and the persisted transcript could drift from
+ * what the model actually saw. Ownership is enforced inside Convex against the
+ * caller's own token, so no cross-user read is expressible here.
+ *
+ * FAILS CLOSED, unlike getUsageFromHeader above. That helper is a cost gate,
+ * where a transient Convex hiccup must never lock a user out. This one is the
+ * model's ENTIRE context: answering "so is that permissible?" with no
+ * antecedent produces a confidently wrong religious answer. A 503 the user can
+ * retry beats a plausible answer to the wrong question.
+ */
+export async function getChatHistoryFromHeader(
+  req: Request,
+  chatId: string
+): Promise<ChatHistoryResult> {
+  const header = req.headers.get("authorization");
+  if (!header || !header.toLowerCase().startsWith("bearer ")) {
+    return { ok: false, reason: "unavailable" };
+  }
+  const token = header.slice(7).trim();
+  if (!token) return { ok: false, reason: "unavailable" };
+  const url = process.env.NEXT_PUBLIC_CONVEX_URL;
+  if (!url) return { ok: false, reason: "unavailable" };
+  // Fresh client per request: setAuth mutates client state, so a shared
+  // instance races across concurrent requests.
+  const client = new ConvexHttpClient(url);
+  client.setAuth(token);
+  try {
+    const res = await client.query(api.chats.getHistoryForCompletion, {
+      chatId,
+    });
+    // null means "no such chat, or not yours" — indistinguishable by design.
+    if (!res) return { ok: false, reason: "not_found" };
+    return { ok: true, messages: res.messages };
+  } catch (e) {
+    console.error(
+      `[chat] history lookup failed: ${e instanceof Error ? e.message : String(e)}`
+    );
+    return { ok: false, reason: "unavailable" };
+  }
+}
+
 // ─── Rate limiter (token bucket per user, per action) ──────────────────────
 
 interface Bucket {
@@ -130,6 +180,13 @@ const LIMITS: Record<string, LimitConfig> = {
   translatetranscript: { capacity: 10, refillPerSec: 10 / 3600 },
   // Ask-the-lecture is interactive; allow a real back-and-forth (~40/hour).
   ask: { capacity: 40, refillPerSec: 40 / 3600 },
+  // Ask Tarjuman (Islamic AI chat). Interactive, but every message is a Claude
+  // Opus 4.8 call with adaptive thinking — roughly 10-25x the marginal cost of
+  // a translate segment. A genuine Q&A session runs 5-15 messages, so a
+  // 20-message burst never walls a real user, while 30/hour sustained caps a
+  // scripted loop. Note this bucket is in-memory and resets on deploy; the
+  // durable ceiling is the monthly fuse in convex/chats.ts.
+  chat: { capacity: 20, refillPerSec: 30 / 3600 },
 };
 
 export function checkRateLimit(

@@ -89,6 +89,10 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   viewportFit: "cover",
+  // Android Chrome shrinks the layout viewport when the keyboard opens, so the
+  // Ask composer stays above it for free instead of sliding underneath. iOS
+  // Safari ignores this and is handled by use-keyboard-inset.
+  interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({

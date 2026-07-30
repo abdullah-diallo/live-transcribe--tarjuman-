@@ -12,6 +12,10 @@ import type { LocaleCode } from "./locales";
 export const MESSAGES = {
   // ── Nav ──
   "nav.record": { en: "Record", ar: "تسجيل", ur: "ریکارڈ", fr: "Enregistrer", es: "Grabar", id: "Rekam", tr: "Kaydet", bn: "রেকর্ড", ms: "Rakam", de: "Aufnehmen" },
+  // Curated locales supplied because all three nav labels share a fixed 92px
+  // slot in the bottom capsule — this is the one string where an over-long
+  // translation visibly breaks layout rather than quietly falling back.
+  "nav.ask": { en: "Ask", ar: "اسأل", ur: "پوچھیں", fr: "Demander", es: "Preguntar", id: "Tanya", tr: "Sor", bn: "জিজ্ঞাসা", ms: "Tanya", de: "Fragen" },
   "nav.history": { en: "History", ar: "السجل", ur: "تاریخ", fr: "Historique", es: "Historial", id: "Riwayat", tr: "Geçmiş", bn: "ইতিহাস", ms: "Sejarah", de: "Verlauf" },
 
   // ── Record ──
@@ -126,6 +130,35 @@ export const MESSAGES = {
   "lp.earlyLaunched": { en: "Tarjuman just launched." },
   "lp.earlyBody": { en: "No paid reviews, no invented quotes — just the tool. Try it at this week's khutbah, and tell us what worked and what broke." },
   "lp.earlyFootnote": { en: "Real stories from real users will live here once people have shared them — with their consent." },
+  // ── Ask Tarjuman (Islamic AI chat) ──
+  // The three disclaimer strings are the ones worth hand-translating first: a
+  // safety notice nobody can read isn't a safety notice.
+  "ask.title": { en: "Ask Tarjuman" },
+  "ask.newChat": { en: "New chat" },
+  "ask.clearTitle": { en: "Start a new chat?" },
+  "ask.clearBody": { en: "This conversation stays saved, and a fresh one begins." },
+  "ask.emptyTitle": { en: "Ask about Islam" },
+  "ask.emptyBody": { en: "Questions about the khutbah, the Quran, hadith, seerah and daily practice — in plain English." },
+  "ask.starters": { en: "Try one of these" },
+  "ask.placeholder": { en: "Ask about Islam…" },
+  "ask.send": { en: "Send" },
+  "ask.thinking": { en: "Thinking…" },
+  "ask.verifying": { en: "Checking references…" },
+  "ask.sources": { en: "Sources" },
+  "ask.unverified": { en: "unverified" },
+  "ask.stopped": { en: "Answer stopped." },
+  "ask.errorTitle": { en: "Couldn't answer" },
+  "ask.retry": { en: "Try again" },
+  "ask.latest": { en: "Latest" },
+  "ask.copy": { en: "Copy" },
+  "ask.copied": { en: "Copied" },
+  "ask.rateLimited": { en: "You're asking faster than I can answer. Try again in {min} min." },
+  "ask.disclaimerTitle": { en: "Study help — not a fatwa." },
+  "ask.disclaimerBody": { en: "Tarjuman AI explains what scholars have said and points you to the source. It doesn't give rulings on your own situation — for that, ask a qualified scholar. Quran and hadith references are checked against quran.com and sunnah.com; open the link before you quote or act on it." },
+  "ask.disclaimerShort": { en: "Tarjuman AI can make mistakes. Verify rulings with a scholar." },
+  "ask.proTitle": { en: "Ask Tarjuman is a Pro feature" },
+  "ask.proBody": { en: "Upgrade to ask unlimited questions about Islam, with every Quran and hadith reference verified." },
+
   // English is required on every key (the guaranteed fallback); the other
   // curated locales are optional here, and the machine-translated locales live
   // in messages-extra.ts (EXTRA_LOCALES). Extending the locale set therefore

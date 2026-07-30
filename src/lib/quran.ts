@@ -20,7 +20,16 @@
  */
 
 // Citation: (Quran SurahName:Ayah)  or  (Quran 2:255)
-const CITATION_RE = /\(Quran\s+([A-Za-z'’\-]+|\d{1,3})\s*:\s*(\d{1,3})\)/g;
+//
+// The ayah group accepts up to 4 digits even though the longest surah has 286
+// verses. It is NOT a mistake: an out-of-range number is exactly the shape a
+// hallucinated citation takes, and quran.com 404s it, so a wider group means it
+// gets parsed, looked up, and STRIPPED. With the old `\d{1,3}` bound, a
+// fabricated "(Quran Al-Baqarah:9999)" failed to match the regex at all and
+// survived into the answer as bare, authentic-looking text — no link, no
+// "unverified" marker, nothing. The most dangerous case was the one that got
+// through untouched. Surah stays at 3 digits (there are 114).
+const CITATION_RE = /\(Quran\s+([A-Za-z'’\-]+|\d{1,3})\s*:\s*(\d{1,4})\)/g;
 
 const MUHSIN_KHAN_TRANSLATION_ID = 95;
 const API_BASE = "https://api.quran.com/api/v4";
@@ -191,18 +200,33 @@ function stripHtml(s: string): string {
 
 export async function lookupVerse(
   surahNumber: number,
-  ayahNumber: number
+  ayahNumber: number,
+  timeoutMs: number = LOOKUP_TIMEOUT_MS
 ): Promise<CacheEntry> {
   const key = `${surahNumber}:${ayahNumber}`;
   const cached = lookupCache.get(key);
   if (cached && cached.kind !== "unknown") return cached;
 
+  // One retry on a transient failure. An answer citing several verses fans out
+  // concurrent requests, and a single slow one otherwise leaves a genuine ayah
+  // marked unverified — which teaches users to ignore the marker that exists to
+  // protect them from a fabricated one. A 404 is an answer, not a failure, and
+  // returns immediately below without retrying.
+  let res: Response | null = null;
+  const url = `${API_BASE}/verses/by_key/${surahNumber}:${ayahNumber}?translations=${MUHSIN_KHAN_TRANSLATION_ID}&fields=text_uthmani`;
   try {
-    const url = `${API_BASE}/verses/by_key/${surahNumber}:${ayahNumber}?translations=${MUHSIN_KHAN_TRANSLATION_ID}&fields=text_uthmani`;
-    const res = await fetch(url, {
-      cache: "no-store",
-      signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
-    });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        res = await fetch(url, {
+          cache: "no-store",
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+        break;
+      } catch (e) {
+        if (attempt === 1) throw e;
+      }
+    }
+    if (!res) return { kind: "unknown" };
     if (res.status === 404) {
       const entry: CacheEntry = { kind: "not-found" };
       lookupCache.set(key, entry);
@@ -324,7 +348,9 @@ export function bodyOverlapFraction(lead: string, body: string): number {
 
 export async function verifyAndEnrichQuran(
   text: string,
-  targetLang: string
+  targetLang: string,
+  /** Per-lookup network budget. See the note on sunnah.ts verifyAndEnrich. */
+  timeoutMs: number = LOOKUP_TIMEOUT_MS
 ): Promise<{ text: string; citations: VerifiedQuranCitation[] }> {
   const all = parseQuranCitations(text);
   if (all.length === 0) {
@@ -335,7 +361,7 @@ export async function verifyAndEnrichQuran(
   const matches = all.length > 50 ? all.slice(0, 50) : all;
 
   const results = await Promise.all(
-    matches.map((m) => lookupVerse(m.surahNumber, m.ayahNumber))
+    matches.map((m) => lookupVerse(m.surahNumber, m.ayahNumber, timeoutMs))
   );
 
   const targetIsEnglish = (targetLang || "").toLowerCase().startsWith("en");

@@ -7,6 +7,7 @@ import {
 import { v } from "convex/values";
 import type { Id, Doc } from "./_generated/dataModel";
 import { auth } from "./auth";
+import { requireUserId } from "./authGuards";
 
 /**
  * Sessions CRUD with ownership checks.
@@ -106,16 +107,9 @@ async function loadSegments(
   return [...session.segments, ...tableExtra];
 }
 
-async function requireUserId(ctx: QueryCtx): Promise<Id<"users">> {
-  const userId = await auth.getUserId(ctx);
-  if (!userId) throw new Error("Not authenticated");
-  // Fail-closed on a deleted identity: a still-valid JWT whose user row is gone
-  // must NOT be allowed to write orphan rows. (This is identity, not
-  // off-language — closing is correct here.) One extra read on the write path.
-  const user = await ctx.db.get(userId);
-  if (!user) throw new Error("Account no longer exists");
-  return userId;
-}
+// `requireUserId` moved to convex/authGuards.ts (imported above) so chats.ts
+// shares the exact same fail-closed deleted-identity check instead of keeping a
+// second copy that can drift. It is a security invariant, not a local helper.
 
 // ─── Mutations ─────────────────────────────────────────────────────────────
 
@@ -543,8 +537,12 @@ function toListItem(s: Doc<"sessions">): Omit<Doc<"sessions">, "segments"> {
   return copy as Omit<Doc<"sessions">, "segments">;
 }
 
-/** First sentence of `text`, truncated to a 60-char title. Null if empty. */
-function truncateTitle(text: string | undefined | null): string | null {
+/**
+ * First sentence of `text`, truncated to a 60-char title. Null if empty.
+ * Exported so chats.ts derives chat titles with the identical rule instead of
+ * keeping a near-copy that drifts.
+ */
+export function truncateTitle(text: string | undefined | null): string | null {
   if (!text) return null;
   const firstSentence = text.split(/(?<=[.!?؟])\s/)[0] ?? text;
   return firstSentence.length > 60
