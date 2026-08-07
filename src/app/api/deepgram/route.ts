@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { isValidLangCode } from "@/lib/utils";
+import { keytermsFor } from "@/lib/stt/keyterms";
 import {
   requireAuthFromHeader,
   checkRateLimit,
@@ -71,7 +72,7 @@ async function getDeepgramProjectId(apiKey: string): Promise<string> {
     // Log the provider body server-side (Vercel logs) but don't echo it to the
     // client — it can carry account/project hints with no value to the caller.
     console.error(
-      `[deepgram] /v1/projects ${res.status}: ${await res.text().catch(() => "")}`
+      `[deepgram] /v1/projects ${res.status}: ${await res.text().catch(() => "")}`,
     );
     throw new Error(`Deepgram /v1/projects returned ${res.status}`);
   }
@@ -97,16 +98,17 @@ async function mintDeepgramTempKey(apiKey: string): Promise<string> {
         scopes: ["usage:write"],
         time_to_live_in_seconds: 60,
       }),
-    }
+    },
   );
   if (!res.ok) {
     console.error(
-      `[deepgram] key mint ${res.status}: ${await res.text().catch(() => "")}`
+      `[deepgram] key mint ${res.status}: ${await res.text().catch(() => "")}`,
     );
     throw new Error(`Deepgram key mint returned ${res.status}`);
   }
   const body = (await res.json()) as { key?: string };
-  if (!body.key) throw new Error("Deepgram key mint response had no `key` field");
+  if (!body.key)
+    throw new Error("Deepgram key mint response had no `key` field");
   return body.key;
 }
 
@@ -114,7 +116,7 @@ export async function GET(req: Request) {
   if (!process.env.DEEPGRAM_API_KEY) {
     return NextResponse.json(
       { error: "DEEPGRAM_API_KEY is not configured on the server" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 
@@ -126,14 +128,14 @@ export async function GET(req: Request) {
   if (!auth) {
     return NextResponse.json(
       { error: "Sign in to transcribe." },
-      { status: 401 }
+      { status: 401 },
     );
   }
   const limit = checkRateLimit(auth.userId, "transcribe");
   if (!limit.allowed) {
     return NextResponse.json(
       { error: `Rate limit hit. Try again in ${limit.retryAfterSec}s.` },
-      { status: 429, headers: { "Retry-After": String(limit.retryAfterSec) } }
+      { status: 429, headers: { "Retry-After": String(limit.retryAfterSec) } },
     );
   }
 
@@ -147,7 +149,7 @@ export async function GET(req: Request) {
         error: `You've used all ${usage.sessionsLimit} free sessions this month. Upgrade to Tarjuman Pro for unlimited recording.`,
         code: "limit_reached",
       },
-      { status: 402 }
+      { status: 402 },
     );
   }
 
@@ -239,6 +241,26 @@ export async function GET(req: Request) {
     //      confidence floor in use-deepgram.ts
     //   2. script-ratio + LLM transliteration/noise verdict in /api/translate
   });
+
+  // Keyterm prompting — biases the decoder toward Islamic vocabulary that a
+  // general Arabic model routinely mangles (liturgical formulae, proper nouns).
+  // This is upstream of the translation prompt: ISLAMIC_TERMINOLOGY_RULES can
+  // only preserve a term the transcript actually contains.
+  //
+  // OPT-IN (`?keyterms=1`) ON PURPOSE. Deepgram rejects unsupported params at
+  // the WS handshake, and the browser sees that rejection as a bare close code
+  // 1006 — i.e. a bad param here doesn't degrade the transcript, it kills
+  // recording outright. `keyterm` is documented for nova-3, but that has not
+  // been verified against `language=ar` on this account. /dev/stt-compare sends
+  // keyterms=1 so the harness proves it out; once a real Arabic session
+  // connects and transcribes with them on, flip this to default-on and drop
+  // the flag. Repeated `keyterm` params are the documented multi-term form.
+  if (reqUrl.searchParams.get("keyterms") === "1") {
+    for (const term of keytermsFor(dgLanguage)) {
+      dgParams.append("keyterm", term);
+    }
+  }
+
   const deepgramUrl = `wss://api.deepgram.com/v1/listen?${dgParams.toString()}`;
 
   // Route through the loopback proxy ONLY when server.js is actually running in
@@ -259,7 +281,7 @@ export async function GET(req: Request) {
       console.error("[deepgram] could not issue session credentials:", msg);
       return NextResponse.json(
         { error: "Could not start a transcription session. Please try again." },
-        { status: 502 }
+        { status: 502 },
       );
     }
   }

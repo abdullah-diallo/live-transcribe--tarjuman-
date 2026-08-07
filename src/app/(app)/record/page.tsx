@@ -24,7 +24,7 @@ import {
   type CompletedSession,
 } from "@/components/session/completed-view";
 import { useRecorder } from "@/hooks/use-recorder";
-import { useDeepgram } from "@/hooks/use-deepgram";
+import { useStt } from "@/hooks/use-stt";
 import { useTranslator } from "@/hooks/use-translator";
 import { useSessionTimer } from "@/hooks/use-session-timer";
 import { usePlan } from "@/hooks/use-plan";
@@ -148,7 +148,7 @@ export default function RecordPage() {
 
   // This-month plan usage. `canStartSession` is false once a free user hits
   // their monthly session cap — we then swap the record button for an upgrade
-  // card and keep the Deepgram WS closed (no token mint = no cost).
+  // card and keep the STT WS closed (no token mint = no cost).
   const plan = usePlan();
   const overSessionLimit = plan ? !plan.canStartSession : false;
 
@@ -170,7 +170,7 @@ export default function RecordPage() {
   }, [hideNav, setNavHidden]);
   useEffect(() => () => setNavHidden(false), [setNavHidden]);
 
-  // Pre-warm the audio pipeline + Deepgram WS as soon as the page mounts,
+  // Pre-warm the audio pipeline + STT WS as soon as the page mounts,
   // but ONLY if mic permission is already granted — never trigger an
   // unsolicited permission prompt. The first time a user reaches /record
   // there's no prewarm; from the second visit onward, their first word
@@ -196,12 +196,12 @@ export default function RecordPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const deepgram = useDeepgram({
+  const stt = useStt({
     pcmNode: recorder.pcmNode,
     sourceLanguage: sourceLang,
     // Keep the WS alive across prewarm + active recording. paused gates
     // outbound frames so prewarm doesn't accidentally leak audio. A free user
-    // over their session cap never opens the WS (no Deepgram token minted).
+    // over their session cap never opens the WS (no STT credentials minted).
     enabled: (isActive || isPrewarmed) && !overSessionLimit,
     paused: recorder.phase === "paused" || isPrewarmed,
     // Only drop side-speaker segments when the user has turned the toggle ON.
@@ -211,7 +211,7 @@ export default function RecordPage() {
   });
 
   const translator = useTranslator({
-    segments: deepgram.segments,
+    segments: stt.segments,
     sourceLanguage: sourceLang,
     targetLanguage: targetLang,
   });
@@ -225,7 +225,7 @@ export default function RecordPage() {
   // ─── Persistence ──────────────────────────────────────────────────────
   // `createSession` resolves asynchronously (~100-300ms over the WebSocket
   // to Convex). During that window, segments may already be arriving from
-  // Deepgram; we hold them locally until the id lands, then flush.
+  // the STT engine; we hold them locally until the id lands, then flush.
   //
   // `createSessionPromiseRef` lets `handleStop` await the in-flight create
   // before tearing down — without this, a fast tap of stop within 300ms of
@@ -247,20 +247,20 @@ export default function RecordPage() {
   // (registered once) and the flush tick can serialize the latest state into
   // localStorage without re-binding.
   const transcriptRef = useRef({
-    segments: deepgram.segments,
+    segments: stt.segments,
     translations: translator.translations,
     merges: translator.merges,
     filteredIds: translator.filteredIds,
   });
   useEffect(() => {
     transcriptRef.current = {
-      segments: deepgram.segments,
+      segments: stt.segments,
       translations: translator.translations,
       merges: translator.merges,
       filteredIds: translator.filteredIds,
     };
   }, [
-    deepgram.segments,
+    stt.segments,
     translator.translations,
     translator.merges,
     translator.filteredIds,
@@ -343,7 +343,7 @@ export default function RecordPage() {
     const sourceTargetSame =
       langsRef.current.source === langsRef.current.target;
 
-    const ready = deepgram.segments.filter((seg) => {
+    const ready = stt.segments.filter((seg) => {
       if (!seg.isFinal || flushed.has(seg.id)) return false;
       // Don't persist noise — single-word / off-language segments the
       // translator dropped server-side. They'd just clutter the saved
@@ -397,10 +397,10 @@ export default function RecordPage() {
   };
 
   // Point the 5s tick at the LATEST flushSegments closure. flushSegments reads
-  // live state (deepgram.segments, translator.*), but the interval effect below
+  // live state (stt.segments, translator.*), but the interval effect below
   // is bound to [recorder.phase], which never changes during an uninterrupted
   // recording — so without this ref the tick would forever call the closure
-  // captured when recording started (whose deepgram.segments is the empty array
+  // captured when recording started (whose stt.segments is the empty array
   // from that render), making incremental Convex persistence a silent no-op.
   const flushRef = useRef(flushSegments);
   useEffect(() => {
@@ -445,7 +445,7 @@ export default function RecordPage() {
   // fresh "starting" transition.
   useEffect(() => {
     if (recorder.phase === "starting") {
-      deepgram.resetTranscript();
+      stt.resetTranscript();
       translator.reset();
       flushedIdsRef.current = new Set();
       mergedFlushedRef.current = new Set();
@@ -604,7 +604,7 @@ export default function RecordPage() {
     // Keep it only if it's real source speech (>=2 words, passes the
     // off-language script gate); persist source-only (blank translation),
     // consistent with the translation fail-open path.
-    const tailRaw = deepgram.interimText.trim();
+    const tailRaw = stt.interimText.trim();
     const tailSeg =
       tailRaw &&
       tailRaw.split(/\s+/).filter(Boolean).length >= 2 &&
@@ -619,7 +619,7 @@ export default function RecordPage() {
           }
         : null;
     const captured = {
-      segments: deepgram.segments,
+      segments: stt.segments,
       translations: translator.translations,
       merges: translator.merges,
       filteredIds: translator.filteredIds,
@@ -743,11 +743,11 @@ export default function RecordPage() {
         analyser={recorder.analyser}
         active={isActive}
         paused={recorder.phase === "paused"}
-        segments={deepgram.segments}
-        interimText={deepgram.interimText}
-        connectionState={deepgram.connectionState}
-        reconnectAttempt={deepgram.reconnectAttempt}
-        transcriptionError={deepgram.error}
+        segments={stt.segments}
+        interimText={stt.interimText}
+        connectionState={stt.connectionState}
+        reconnectAttempt={stt.reconnectAttempt}
+        transcriptionError={stt.error}
         translations={translator.translations}
         merges={translator.merges}
         suppressedIds={translator.suppressedIds}

@@ -42,7 +42,7 @@ const sessionListItemValidator = v.object({
   status: v.union(
     v.literal("recording"),
     v.literal("paused"),
-    v.literal("completed")
+    v.literal("completed"),
   ),
   duration: v.number(),
   summary: v.optional(v.string()),
@@ -73,7 +73,9 @@ function rowToSegment(r: Doc<"transcriptSegments">): StoredSegment {
     translatedText: r.translatedText,
     timestamp: r.timestamp,
     ...(r.mergedFromIds ? { mergedFromIds: r.mergedFromIds } : {}),
-    ...(r.combinedSourceText ? { combinedSourceText: r.combinedSourceText } : {}),
+    ...(r.combinedSourceText
+      ? { combinedSourceText: r.combinedSourceText }
+      : {}),
     ...(r.combinedTranslatedText
       ? { combinedTranslatedText: r.combinedTranslatedText }
       : {}),
@@ -88,7 +90,7 @@ function segmentCountOf(s: Doc<"sessions">): number {
 /** All segments for a session: from the table, or legacy inline as fallback. */
 async function loadSegments(
   ctx: QueryCtx,
-  session: Doc<"sessions">
+  session: Doc<"sessions">,
 ): Promise<StoredSegment[]> {
   const rows = await ctx.db
     .query("transcriptSegments")
@@ -100,9 +102,7 @@ async function loadSegments(
   // and table (later) segments. Inline came first chronologically; append any
   // table rows not already represented inline, deduped by id.
   const inlineIds = new Set(session.segments.map((s) => s.id));
-  const tableExtra = rows
-    .map(rowToSegment)
-    .filter((s) => !inlineIds.has(s.id));
+  const tableExtra = rows.map(rowToSegment).filter((s) => !inlineIds.has(s.id));
   return [...session.segments, ...tableExtra];
 }
 
@@ -163,7 +163,7 @@ export const addSegments = mutation({
       const dup = await ctx.db
         .query("transcriptSegments")
         .withIndex("by_session_seg", (q) =>
-          q.eq("sessionId", args.sessionId).eq("segId", seg.id)
+          q.eq("sessionId", args.sessionId).eq("segId", seg.id),
         )
         .first();
       if (dup) continue;
@@ -228,7 +228,7 @@ export const updateSegmentMerge = mutation({
     const row = await ctx.db
       .query("transcriptSegments")
       .withIndex("by_session_seg", (q) =>
-        q.eq("sessionId", args.sessionId).eq("segId", args.parentSegmentId)
+        q.eq("sessionId", args.sessionId).eq("segId", args.parentSegmentId),
       )
       .first();
     if (row) {
@@ -250,7 +250,7 @@ export const updateSegmentMerge = mutation({
             combinedSourceText: args.combinedSourceText,
             combinedTranslatedText: args.combinedTranslatedText,
           }
-        : s
+        : s,
     );
     await ctx.db.patch(args.sessionId, {
       segments: next,
@@ -409,7 +409,7 @@ export const sweepStaleSessions = internalMutation({
     const stale = await ctx.db
       .query("sessions")
       .withIndex("by_status_updated", (q) =>
-        q.eq("status", "recording").lt("updatedAt", cutoff)
+        q.eq("status", "recording").lt("updatedAt", cutoff),
       )
       .take(25);
     let completed = 0;
@@ -497,40 +497,60 @@ export const getRecentSessions = query({
   handler: async (ctx, args) => {
     const userId = await auth.getUserId(ctx);
     if (!userId) return [];
-    const limit = args.limit ?? 3;
-    // Paginate instead of .collect(): a power user with 200 saved khutbahs
-    // would otherwise load every full transcript just to show 3 history cards
-    // on /record. Stop as soon as we have enough non-empty rows.
+    // Clamp to a non-negative integer. The scan loop pushes a row before
+    // testing `results.length >= limit`, so an unclamped 0 or negative would
+    // return ONE session where the caller asked for none.
+    const limit = Math.max(0, Math.floor(args.limit ?? 3));
+    if (limit === 0) return [];
+    // Stream instead of .collect(): a power user with 200 saved khutbahs would
+    // otherwise load every session row just to show 3 history cards on /record.
+    // Stop as soon as we have enough non-empty rows.
     return await collectRecentListItems(ctx, userId, limit);
   },
 });
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
+/**
+ * Upper bound on rows examined while hunting for `limit` non-empty sessions.
+ *
+ * A user whose history is mostly empty phantom rows (createSession fires on
+ * /record prewarm, so an idle visit leaves one behind) would otherwise walk
+ * their entire history to fill three cards. 200 is far more than enough in
+ * practice while keeping the read bounded as the table grows.
+ */
+const RECENT_SCAN_LIMIT = 200;
+
 async function collectRecentListItems(
   ctx: QueryCtx,
   userId: Id<"users">,
-  limit: number
+  limit: number,
 ): Promise<Omit<Doc<"sessions">, "segments">[]> {
   const results: Omit<Doc<"sessions">, "segments">[] = [];
-  let cursor: string | null = null;
-  const pageSize = Math.max(limit * 3, 10);
+  let scanned = 0;
 
-  while (results.length < limit) {
-    const page = await ctx.db
-      .query("sessions")
-      .withIndex("by_user_date", (q) => q.eq("userId", userId))
-      .order("desc")
-      .paginate({ numItems: pageSize, cursor });
-
-    for (const session of page.page) {
-      if (segmentCountOf(session) === 0) continue;
+  // ASYNC ITERATION, NOT .paginate(). This previously called .paginate() inside
+  // a while loop to page past empty sessions — but Convex permits exactly ONE
+  // paginated query per function execution, so the second call threw
+  // "ran multiple paginated queries" and the /record recent list died. The bug
+  // only surfaced once a user had more than one page of history whose first
+  // page held fewer than `limit` non-empty rows, which is why it survived
+  // early use.
+  //
+  // `for await` streams lazily in index order and stops the moment we break, so
+  // it reads no more than it needs — the property the pagination loop was
+  // reaching for — with no single-paginated-query restriction and no .collect()
+  // of the full history.
+  for await (const session of ctx.db
+    .query("sessions")
+    .withIndex("by_user_date", (q) => q.eq("userId", userId))
+    .order("desc")) {
+    scanned++;
+    if (segmentCountOf(session) > 0) {
       results.push(toListItem(session));
-      if (results.length >= limit) return results;
+      if (results.length >= limit) break;
     }
-
-    if (page.isDone) break;
-    cursor = page.continueCursor;
+    if (scanned >= RECENT_SCAN_LIMIT) break;
   }
 
   return results;
@@ -553,7 +573,7 @@ function truncateTitle(text: string | undefined | null): string | null {
 }
 
 function deriveTitle(
-  segments: { sourceText: string; translatedText: string }[]
+  segments: { sourceText: string; translatedText: string }[],
 ): string | null {
   const first = segments[0];
   if (!first) return null;

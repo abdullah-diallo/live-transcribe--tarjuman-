@@ -32,7 +32,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   // The app is a 420px phone column everywhere — except the pricing page, which
   // is a comparison grid that needs room to lay the tiers out side by side on
   // desktop (it stays a stacked single column on mobile).
-  const wide = pathname === "/plans";
+  // /dev/stt-compare puts two transcript columns side by side — the phone
+  // column would stack them and defeat the comparison.
+  const wide = pathname === "/plans" || pathname.startsWith("/dev/");
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
