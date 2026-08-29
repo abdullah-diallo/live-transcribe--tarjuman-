@@ -271,14 +271,20 @@ html {
     inset 0 -1px 0 rgba(0, 0, 0, 0.25);
 }
 
-/* The language label overlays the scroller (rather than sitting above it) so
-   tiles genuinely refract as they slide under it — the one real "liquid"
-   moment in this view. The scroller carries matching top padding. */
-.glass-panel-label {
+/* The language label — a small glass chip floating over the scroller (rather
+   than a full-width bar above it) so tiles genuinely refract as they slide
+   under it. That refraction is the one real "liquid" moment in this view,
+   which is why the chip carries its own backdrop-filter: .glass-tile is only
+   a translucent tint, so a chip built from that alone would sit FLAT on top
+   of moving text instead of blurring it. The scroller carries matching top
+   padding to keep the first tile clear. */
+.glass-chip {
   background: rgba(20, 28, 46, 0.55);
   backdrop-filter: blur(18px) saturate(160%);
   -webkit-backdrop-filter: blur(18px) saturate(160%);
-  border-bottom: 1px solid var(--color-border-faint);
+  border: 1px solid var(--color-border-light);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.22), 0 2px 10px rgba(0, 0, 0, 0.22);
 }
 
 /* One transcript line. --tile-tint / --tile-rim are set inline per variant

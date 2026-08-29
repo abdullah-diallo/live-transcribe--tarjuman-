@@ -177,8 +177,8 @@ const SplitTargetRow = memo(function SplitTargetRow({
  *
  * Liquid glass: each half is a floating frosted panel (the app's canonical
  * glass material, `.glass-panel`) over a faint ambient wash, and every
- * transcript line is a glass tile inside it. The language label is a sticky
- * frosted bar that the tiles slide under and refract through.
+ * transcript line is a glass tile inside it. The language label is a small
+ * glass chip that the tiles slide under and refract through.
  *
  * Responsive: stacks top (source) / bottom (target) on a phone, becomes
  * left / right panels on a tablet or wider screen (`md:`). Both panes pin to
@@ -345,18 +345,24 @@ export function SplitTranscript({
 }
 
 /**
- * Language label for a pane. Overlays the scroller (absolute, not a flex
- * sibling) so the tiles pass UNDER its frosted bar and blur through it —
- * see `.glass-panel-label` in globals.css. The scroller's `pt-[46px]` keeps
- * the first tile clear of it.
+ * Language label for a pane — a glass chip floating over the scroller
+ * (absolute, not a flex sibling) so tiles pass UNDER it and blur through it;
+ * see `.glass-chip` in globals.css. The scroller's `pt-[46px]` keeps the first
+ * tile clear of it.
+ *
+ * The wrapper is a transparent, pointer-events-none positioning layer so only
+ * the chip itself is visible and the pane below stays fully scrollable —
+ * a full-width bar here would re-introduce the divider this replaced.
  */
 function PaneLabel({ name, color }: { name: string; color: string }) {
   return (
-    <div
-      className="glass-panel-label absolute top-0 inset-x-0 z-10 px-4 pt-3 pb-2 text-[10px] font-bold uppercase tracking-wider"
-      style={{ color }}
-    >
-      {name}
+    <div className="absolute top-0 inset-x-0 z-10 px-3 pt-3 pointer-events-none">
+      <span
+        className="glass-chip inline-block rounded-[10px] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider"
+        style={{ color }}
+      >
+        {name}
+      </span>
     </div>
   );
 }
