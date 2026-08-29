@@ -77,7 +77,11 @@ export function AccountMenu({ dropUp = false }: { dropUp?: boolean } = {}) {
         onPointerLeave={() => setHover(false)}
         aria-label="Account menu"
         aria-busy={loading}
-        className={`w-8 h-8 rounded-xl grid place-items-center text-[12px] font-bold cursor-pointer active:scale-95 overflow-hidden${
+        // 36x36 (w-9), NOT 32 — every other tile in the nav bar is w-9 h-9:
+        // the brand mark on the left, the locale switcher sitting right next to
+        // this one. At w-8 the avatar read as visibly smaller than its
+        // neighbour. Keep these in step if either changes.
+        className={`w-9 h-9 rounded-xl grid place-items-center text-[12px] font-bold cursor-pointer active:scale-95 overflow-hidden${
           loading ? " animate-pulse" : ""
         }`}
         style={{
