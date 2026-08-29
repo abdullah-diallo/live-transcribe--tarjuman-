@@ -114,10 +114,66 @@ export const SPEECHMATICS = {
   // Shorter than Deepgram's 25s: Speechmatics runs `prefer_current_speaker` and
   // held one stable label throughout testing rather than re-clustering mid-run.
   diarizeWarmupMs: 10_000,
+  /**
+   * Drop a finalized sentence below this mean word confidence.
+   *
+   * Matches the Deepgram floor's intent but sits lower relative to observed
+   * output: Speechmatics reported 0.96-1.00 on genuine far-field khutbah speech
+   * in testing, so anything under 0.45 is a strong noise signal rather than
+   * merely distant speech.
+   *
+   * KNOWN TUNING ISSUE: this floor is Arabic-tuned. In the 2026-07-25 language
+   * sweep it discarded 100% of Hungarian STT. Both engines' floors live in this
+   * file precisely so that decision can be made in one place.
+   */
+  finalConfidenceFloor: 0.45,
+} as const;
+
+/**
+ * Deepgram tuning — the FALLBACK engine (see STT_PROVIDER above). Mirrors the
+ * SPEECHMATICS block field-for-field so the two engines' knobs can be read side
+ * by side instead of being buried as private constants in two 700-line hooks.
+ */
+export const DEEPGRAM = {
+  /**
+   * Drop a final segment if Deepgram's confidence falls below this threshold.
+   * Clean native-language speech scores 0.7-0.95, but FAR-FIELD PA capture in a
+   * reverberant masjid (the primary use case) regularly drags real, correctly-
+   * transcribed sentences down into the 0.45-0.6 band. A 0.55 floor was silently
+   * discarding that legitimate speech — the "I'm talking but nothing appears"
+   * report. Lowered to 0.45 so genuine quiet/distant speech survives; the
+   * remaining off-language transliteration noise that lands in this band is
+   * still caught downstream (the off-language script gate + the LLM
+   * transliteration/noise verdict in /api/translate, which fails OPEN — it keeps
+   * the source card, never the reverse). Tunable; raise if noise creeps in.
+   */
+  finalConfidenceFloor: 0.45,
+  /**
+   * Don't paint interim text below this confidence. Interims are partial
+   * hypotheses so they score lower than finals — this floor is deliberately
+   * lenient. It exists so off-language speech (which Deepgram, forced to the
+   * session language, transcribes as low-confidence transliterated noise)
+   * doesn't continuously flash garbage in the live view while every final
+   * gets dropped by the filters downstream. Real source-language speech
+   * crosses 0.4 within the first word or two.
+   */
+  interimConfidenceFloor: 0.4,
+  /** Off-language drop: only drop if the language-detection confidence exceeds this. */
+  languageMismatchDropThreshold: 0.7,
+  speakerLockWarmupMs: 15_000,
+  speakerLockMinDurationS: 5,
+  /**
+   * Deepgram's LIVE diarizer ascribes all speech to speaker 0 for the first
+   * ~20-30s, then re-clusters and may re-number the SAME speaker to a higher
+   * index. Ignore diarization (no lock accounting, no per-segment speaker id)
+   * within this window so a lone speaker isn't split into "Speaker 1" + "2".
+   * Much longer than Speechmatics' 10s for exactly this reason.
+   */
+  diarizeWarmupMs: 25_000,
+  keepAliveIntervalMs: 5000,
 } as const;
 
 export const SEGMENT_FLUSH_INTERVAL_MS = 5000;
-export const DEEPGRAM_KEEPALIVE_INTERVAL_MS = 5000;
 export const RECONNECT_BACKOFF = [
   1000, 2000, 4000, 8000, 16000, 30000,
 ] as const;

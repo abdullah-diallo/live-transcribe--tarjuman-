@@ -24,7 +24,7 @@ export default function TermsPage() {
   return (
     <>
       <h1 style={styles.h1}>Terms of Service</h1>
-      <div style={styles.meta}>Last updated: 2026-06-20</div>
+      <div style={styles.meta}>Last updated: 2026-08-29</div>
 
       <p style={styles.p}>
         By using Tarjuman (the &quot;Service&quot;), you agree to these
@@ -87,8 +87,9 @@ export default function TermsPage() {
       <h2 style={styles.h2}>Service availability</h2>
       <p style={styles.p}>
         We aim for high availability but make no uptime guarantee. The
-        Service depends on third-party providers (Deepgram, Anthropic,
-        Convex, and Vercel) whose outages may affect our availability.
+        Service depends on third-party providers (Speechmatics, Deepgram,
+        Anthropic, Convex, and Vercel) whose outages may affect our
+        availability.
       </p>
 
       <h2 style={styles.h2}>Pricing</h2>

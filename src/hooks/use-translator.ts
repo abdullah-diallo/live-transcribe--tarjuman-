@@ -209,7 +209,7 @@ export function useTranslator({
             // judged this segment untranslatable / off-language) — or leaked
             // meta-commentary that the server guard should have blanked but,
             // as a last line of defense (stale build / cache), we blank here
-            // too so it can never render. The Deepgram source is ground truth
+            // too so it can never render. The transcribed source is ground truth
             // and must NEVER be deleted by a translation verdict — keep the
             // segment with a blank translation so its source card persists to
             // the live view and the saved session. (Genuine noise is dropped

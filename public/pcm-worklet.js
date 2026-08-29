@@ -1,6 +1,6 @@
 // AudioWorkletProcessor that converts the audio graph's Float32 output to
 // signed 16-bit PCM and posts ArrayBuffer frames to the main thread. Fed
-// to Deepgram as raw Linear16 (encoding=linear16&sample_rate=16000) so we
+// to the STT engine as raw Linear16 (encoding=linear16&sample_rate=16000) so we
 // avoid the container framing latency MediaRecorder/WebM-Opus imposes on
 // small chunks.
 //
@@ -11,7 +11,7 @@
 //
 // Noise gate: frames whose RMS falls below NOISE_GATE_LINEAR (-55 dBFS)
 // are zero-filled before posting. Sending zeros instead of dropping keeps
-// the WebSocket cadence intact for Deepgram's endpointing logic; Deepgram
+// the WebSocket cadence intact for the engine's endpointing logic; the engine
 // interprets zero-filled frames as clean silence. -55 dBFS sits well below
 // even very quiet outdoor PA bleed (~-40 dBFS), so legitimate signal passes
 // through unchanged — only true near-silence (gaps between phrases, ambient
@@ -53,7 +53,7 @@ class PcmWorkletProcessor extends AudioWorkletProcessor {
           }
         }
         // Else: int16 stays zero-filled (Int16Array default). Posted as
-        // silence to Deepgram — keeps WS cadence + lets endpointing fire.
+        // silence to the engine — keeps WS cadence + lets endpointing fire.
         this.port.postMessage(int16.buffer, [int16.buffer]);
         this.bufferIndex = 0;
       }

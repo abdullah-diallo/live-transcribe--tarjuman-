@@ -24,7 +24,7 @@ export default function PrivacyPage() {
   return (
     <>
       <h1 style={styles.h1}>Privacy Policy</h1>
-      <div style={styles.meta}>Last updated: 2026-06-20</div>
+      <div style={styles.meta}>Last updated: 2026-08-29</div>
 
       <p style={styles.p}>
         This Privacy Policy explains how Tarjuman (&quot;Tarjuman&quot;,
@@ -41,9 +41,11 @@ export default function PrivacyPage() {
         </li>
         <li>
           <strong>Audio you record:</strong> when you start a session, your
-          microphone audio is streamed to our speech-to-text provider (Deepgram)
-          for live transcription. Audio is processed in transit and is{" "}
-          <strong>not stored</strong> by us — only the resulting text is saved.
+          microphone audio is streamed to our speech-to-text provider
+          (Speechmatics, or Deepgram as a standby if Speechmatics is
+          unavailable) for live transcription. Audio is processed in transit and
+          is <strong>not stored</strong> by us — only the resulting text is
+          saved.
         </li>
         <li>
           <strong>Transcripts, translations &amp; summaries:</strong> the
@@ -70,8 +72,21 @@ export default function PrivacyPage() {
       </p>
       <ul style={styles.ul}>
         <li>
-          <strong>Deepgram</strong> — real-time speech-to-text. Your audio is
-          sent to Deepgram for transcription and returned as text.{" "}
+          <strong>Speechmatics</strong> — real-time speech-to-text (our primary
+          engine). Your audio is sent to Speechmatics for transcription and
+          returned as text.{" "}
+          <a
+            href="https://www.speechmatics.com/legal/privacy-policy"
+            style={{ color: COLORS.accent }}
+          >
+            Policy
+          </a>
+          .
+        </li>
+        <li>
+          <strong>Deepgram</strong> — standby speech-to-text, used only if
+          Speechmatics is unavailable. When it is in use, your audio is sent to
+          Deepgram for transcription and returned as text.{" "}
           <a href="https://deepgram.com/privacy" style={{ color: COLORS.accent }}>
             Policy
           </a>
@@ -169,9 +184,9 @@ export default function PrivacyPage() {
 
       <h2 style={styles.h2}>International transfers</h2>
       <p style={styles.p}>
-        Our processors are based primarily in the United States, so your data
-        may be processed there. By using the Service, you consent to this
-        transfer and processing.
+        Our processors are based primarily in the United States and the
+        United Kingdom (Speechmatics), so your data may be processed there. By
+        using the Service, you consent to this transfer and processing.
       </p>
 
       <h2 style={styles.h2}>Cookies</h2>

@@ -62,7 +62,8 @@ in a masjid depending on it.
 If the transcript is usable and the Islamic terms survive across at least the
 **1–2 m + moderate-noise** condition, the core hypothesis holds and Friday is a
 confirmation run. If it breaks even in a quiet room at 1 m, that's a tuning problem
-(Deepgram model/params, the Web Audio pipeline gains) to solve **before** Friday — not
+(the STT engine/params in `src/lib/constants.ts`, the Web Audio pipeline gains) to
+solve **before** Friday — not
 a surprise to discover there.
 
 ## What this does NOT cover

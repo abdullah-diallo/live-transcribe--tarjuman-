@@ -11,9 +11,14 @@
  * generic over the speaker key because vendors disagree on the type: Deepgram
  * returns numeric indices, Speechmatics returns labels like "S1".
  *
- * NOTE: use-deepgram.ts still carries its own inline copy. That is deliberate —
- * Deepgram is now the fallback engine and the safest thing to do with a fallback
- * is not touch it. Unify only when there is a reason to edit both.
+ * BOTH engines now run this module (2026-08-29). The earlier note here said
+ * use-deepgram.ts should keep its inline copy because "the safest thing to do
+ * with a fallback is not touch it" — that was reversed deliberately. A fallback
+ * whose speaker policy silently diverges from the tested one is worse than no
+ * fallback, because the divergence only surfaces during an outage, which is
+ * the worst possible moment to discover it. speaker-lock.test.ts covers both
+ * engines' parameterizations for exactly this reason: Deepgram is the config
+ * nobody exercises by hand.
  */
 
 export interface SpeakerLockOptions {

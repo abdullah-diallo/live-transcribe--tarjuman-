@@ -126,9 +126,9 @@ export function routeModel(
 // Drop segments before they ever hit the LLM:
 //   1. Fewer than 3 words — single-word interjections like "اجمعين" are noise.
 //   2. Off-language by script — non-source-script text in an RTL session (e.g.
-//      English in an Arabic session, now visible as Latin thanks to Deepgram
+//      English in an Arabic session, now visible as Latin thanks to the STT
 //      multilingual mode). Server-side backstop to the client gate in
-//      use-deepgram; both share src/lib/script.ts.
+//      use-speechmatics and use-deepgram; both share src/lib/script.ts.
 
 export function shouldFilterAsNoise(
   text: string,

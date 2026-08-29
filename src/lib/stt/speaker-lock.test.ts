@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createSpeakerLock } from "./speaker-lock";
+import { DEEPGRAM, SPEECHMATICS } from "@/lib/constants";
 
 const opts = {
   warmupMs: 15_000,
@@ -93,5 +94,96 @@ describe("speaker lock", () => {
     l.maybeLock(20_000);
     expect(l.locked()).toBeNull(); // durations cleared, nothing to lock
     expect(l.displayIndex("S9", 20_000)).toBe(0); // remap cleared
+  });
+});
+
+/**
+ * Deepgram parameterization. Both engines run this same module, so the
+ * fallback engine's config gets the same coverage as the primary one —
+ * otherwise a "safe" edit to the shared lock could silently break the engine
+ * we only find out about during an outage.
+ *
+ * Two things differ from Speechmatics and both are load-bearing:
+ *   - speaker keys are NUMBERS, not "S1" labels, and the first one is 0
+ *   - the diarize warmup (25s) is LONGER than the lock warmup (15s)
+ */
+describe("speaker lock — Deepgram parameterization", () => {
+  const dgOpts = {
+    warmupMs: DEEPGRAM.speakerLockWarmupMs,
+    minDurationS: DEEPGRAM.speakerLockMinDurationS,
+    diarizeWarmupMs: DEEPGRAM.diarizeWarmupMs,
+  };
+  const dg = () => createSpeakerLock<number>(dgOpts);
+
+  it("uses a diarize warmup longer than the lock warmup", () => {
+    // This ordering is what the next two tests exercise. If it ever inverts,
+    // they stop testing what they claim to.
+    expect(DEEPGRAM.diarizeWarmupMs).toBeGreaterThan(
+      DEEPGRAM.speakerLockWarmupMs,
+    );
+    expect(SPEECHMATICS.diarizeWarmupMs).toBeLessThan(DEEPGRAM.diarizeWarmupMs);
+  });
+
+  it("stays unlocked past the lock warmup while still inside diarize warmup", () => {
+    const l = dg();
+    // t=20s is past speakerLockWarmupMs (15s) but inside diarizeWarmupMs (25s),
+    // a window that does not exist for Speechmatics. Deepgram's live diarizer
+    // parks everything on speaker 0 here, so locking now would lock onto an
+    // artifact.
+    l.observe(0, 30, 20_000);
+    l.maybeLock(20_000);
+    expect(l.locked()).toBeNull();
+    expect(l.displayIndex(0, 20_000)).toBeUndefined();
+  });
+
+  it("locks onto speaker 0 — a falsy but valid speaker id", () => {
+    const l = dg();
+    // The lone-khateeb case: Deepgram numbers the only speaker 0. Any truthiness
+    // check (`if (!speaker)`) instead of an `=== undefined` check would treat
+    // the main speaker as "no speaker" and break the primary use case outright.
+    l.observe(0, 30, 30_000);
+    l.maybeLock(30_000);
+    expect(l.locked()).toBe(0);
+    expect(l.displayIndex(0, 30_000)).toBe(0);
+    expect(l.shouldDrop(1, 30_000, true)).toBe(true);
+    expect(l.shouldDrop(0, 30_000, true)).toBe(false);
+  });
+
+  it("re-bases post-reclustering indices so the khateeb reads as Speaker 1", () => {
+    const l = dg();
+    // Deepgram re-clusters after warmup and may renumber the same person to a
+    // higher index; the first speaker seen after warmup must still display as 0.
+    expect(l.displayIndex(3, 30_000)).toBe(0);
+    expect(l.displayIndex(0, 30_000)).toBe(1);
+    expect(l.displayIndex(3, 30_000)).toBe(0);
+  });
+
+  it("accumulates per-word durations across a session, then locks the dominant speaker", () => {
+    const l = dg();
+    // Mirrors the hook: observe() is called once per word, not once per segment.
+    for (let i = 0; i < 20; i++) l.observe(0, 0.4, 30_000); // 8.0s
+    for (let i = 0; i < 5; i++) l.observe(1, 0.4, 30_000); // 2.0s
+    l.maybeLock(30_000);
+    expect(l.locked()).toBe(0);
+  });
+
+  it("ignores zero and negative word durations", () => {
+    const l = dg();
+    // Deepgram emits words whose start === end; they must not count as speech.
+    l.observe(1, 0, 30_000);
+    l.observe(1, -2, 30_000);
+    l.maybeLock(30_000);
+    expect(l.locked()).toBeNull();
+  });
+
+  it("reset clears state between sessions", () => {
+    const l = dg();
+    l.observe(0, 30, 30_000);
+    l.maybeLock(30_000);
+    expect(l.locked()).toBe(0);
+    l.reset();
+    // A stale lock carried into the next recording would drop the new speaker.
+    expect(l.locked()).toBeNull();
+    expect(l.shouldDrop(1, 30_000, true)).toBe(false);
   });
 });

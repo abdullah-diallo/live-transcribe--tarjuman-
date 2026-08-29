@@ -43,10 +43,11 @@ export interface LiveSegment {
   text: string;
   isFinal: boolean;
   timestamp: number;
-  /** Cumulative duration of this segment in seconds (Deepgram-reported). */
+  /** Cumulative duration of this segment in seconds (engine-reported). */
   durationSec?: number;
-  /** Speaker id from Deepgram diarization. Same speaker across the session. */
+  /** Speaker id from engine diarization, re-based to first-seen order by
+   *  lib/stt/speaker-lock.ts. Same speaker across the session. */
   speaker?: number;
-  /** Average word confidence from Deepgram, 0..1. */
+  /** Average word confidence from the STT engine, 0..1. */
   confidence?: number;
 }

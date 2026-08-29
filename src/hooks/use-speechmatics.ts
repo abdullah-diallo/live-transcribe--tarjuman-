@@ -80,16 +80,6 @@ interface SmMessage {
   type?: string;
 }
 
-/**
- * Drop a finalized sentence below this mean word confidence.
- *
- * Matches the Deepgram floor's intent but sits lower relative to observed
- * output: Speechmatics reported 0.96-1.00 on genuine far-field khutbah speech
- * in testing, so anything under 0.45 is a strong noise signal rather than
- * merely distant speech.
- */
-const FINAL_CONFIDENCE_THRESHOLD = 0.45;
-
 /** Flush a sentence anyway after this many words, if no is_eos has arrived. */
 const MAX_WORDS_PER_SEGMENT = 25;
 
@@ -234,7 +224,7 @@ export function useSpeechmatics({
         ? confs.reduce((a, b) => a + b, 0) / confs.length
         : 1;
 
-      if (confidence < FINAL_CONFIDENCE_THRESHOLD) {
+      if (confidence < SPEECHMATICS.finalConfidenceFloor) {
         dbg(`[sm] dropped low-confidence final (${confidence.toFixed(2)})`);
         setInterimText("");
         return;

@@ -370,7 +370,7 @@ export async function POST(req: NextRequest) {
           // input ("I recognize this as a transliteration artifact…"). Either
           // way it is NOT a translation. FAIL-OPEN: emit an empty translatedText
           // WITHOUT `filtered`, so the client keeps the segment's
-          // Deepgram-transcribed source (ground truth) with a blank translation
+          // transcribed source (ground truth) with a blank translation
           // rather than deleting it. The deterministic noise filter
           // (shouldFilterAsNoise above) is the ONLY path that sets filtered=true
           // and removes a segment; a translation-model verdict must never delete

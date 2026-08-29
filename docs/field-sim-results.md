@@ -2,6 +2,11 @@
 
 **Run:** 2026-06-22 · `npx tsx bench/field-sim.ts` · live Deepgram nova-3 + live Claude.
 
+> 📌 **Historical — wrong engine.** These numbers were produced on **Deepgram
+> nova-3**, which as of 2026-08 is the *fallback* engine. Production runs
+> Speechmatics (`STT_PROVIDER` in `src/lib/constants.ts`). The STT leg below no
+> longer describes what ships; the translation leg is still representative.
+
 > ⚠️ **This is a bench simulation, not the field test.** It exercises the two
 > live-API legs (STT + translation) against **digitally** degraded audio. It does
 > **NOT** reproduce real acoustic capture through air, real masjid reverb (marble

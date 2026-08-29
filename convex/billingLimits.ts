@@ -4,7 +4,8 @@
  * Pure constants + pure helpers only (no Convex/Node imports) so this file is
  * safe to import from three places that must agree:
  *   - Convex functions (convex/subscriptions.ts) — compute server-side usage
- *   - Next.js API routes (/api/deepgram, /api/summarize) — enforce the cost gate
+ *   - Next.js API routes (/api/speechmatics, /api/deepgram, /api/summarize) —
+ *     enforce the cost gate
  *   - Client components (Settings, Record, SessionBody) — show usage + CTAs
  *
  * Tuning the product is a one-line edit here. The numbers below are the
@@ -130,7 +131,7 @@ export const PLAN_META: Record<Plan, PlanMeta> = {
 
 /**
  * Anti-runaway fuse — NOT a product limit. A phone left recording (or a session
- * the user never stops) shouldn't bill us for hours of Deepgram. No real dars
+ * the user never stops) shouldn't bill us for hours of STT. No real dars
  * approaches this; al-Badr's longest runs ~3h. Applies to every tier.
  */
 export const MAX_SESSION_HOURS = 6;

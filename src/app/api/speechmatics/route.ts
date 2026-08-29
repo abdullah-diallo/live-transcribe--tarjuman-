@@ -25,8 +25,12 @@ import {
 
 const MP_URL = "https://mp.speechmatics.com/v1/api_keys?type=rt";
 
-// Long enough to cover a full comparison run, short enough that a leaked token
-// is near-worthless. Vendor range is 60–86400s.
+// Long enough to cover a full recording, short enough that a leaked token is
+// near-worthless. Vendor range is 60–86400s.
+//
+// A session longer than this is NOT a problem: connect() re-fetches a fresh JWT
+// on every attempt, including every backoff reconnect, so a 6-hour dars keeps
+// minting new credentials rather than riding one expiring token.
 const TTL_SECONDS = 3600;
 
 // Global endpoint auto-routes to the nearest region. Override for data
@@ -48,7 +52,7 @@ export async function POST(req: NextRequest) {
   const auth = await requireAuthFromHeader(req);
   if (!auth) {
     return NextResponse.json(
-      { error: "Sign in to run a transcription comparison." },
+      { error: "Sign in to transcribe." },
       { status: 401 },
     );
   }

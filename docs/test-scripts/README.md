@@ -73,7 +73,7 @@ Exit `0` = account confirmed deleted.
 
 - Credentials are passed as args/generated at runtime — **never hardcode real
   secrets here.** Test accounts use the `@tarjuman-test.dev` domain.
-- Authenticated pages keep a live Convex/Deepgram WebSocket open, so these
+- Authenticated pages keep a live Convex/STT WebSocket open, so these
   scripts navigate with `domcontentloaded` + a fixed settle delay rather than
   `networkidle` (which never fires).
 - Running `verify-prod.mjs` against prod creates and deletes a real user row.

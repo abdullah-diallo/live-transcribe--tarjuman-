@@ -67,7 +67,8 @@ void cachedClient;
 
 /**
  * Fetch the caller's this-month plan usage, for the cost gates on
- * /api/deepgram (sessions) and /api/summarize (summaries). Returns null on any
+ * /api/speechmatics + /api/deepgram (sessions) and /api/summarize (summaries).
+ * Returns null on any
  * failure (no bearer token, invalid token, query error) — callers FAIL OPEN:
  * a transient Convex hiccup must never lock a paying-or-free user out of the
  * app. The product gate is the reactive UI; this is the can't-bypass-the-UI
@@ -122,7 +123,7 @@ const LIMITS: Record<string, LimitConfig> = {
   // Summary is once per session. A user shouldn't need more than ~10/hour
   // even with re-generations.
   summarize: { capacity: 10, refillPerSec: 10 / 3600 },
-  // Deepgram token mint fires once per session (+ on reconnect). Same
+  // STT credential mint fires once per session (+ on reconnect). Same
   // generous bucket as translate.
   transcribe: { capacity: 60, refillPerSec: 1 },
   // Pro AI tools — one-shot per session, like summarize.

@@ -3,7 +3,14 @@
  *
  * Exercises the two live-API legs of the Tarjuman pipeline against degraded
  * Arabic audio + curated inputs:
- *   1. STT  — streams 16k mono PCM to the REAL Deepgram nova-3 (exact prod params).
+ *   1. STT  — streams 16k mono PCM to the REAL Deepgram nova-3.
+ *
+ *   ⚠️ ENGINE DRIFT: this harness benchmarks DEEPGRAM, which since 2026-08 is
+ *   the FALLBACK engine. Production runs Speechmatics (see STT_PROVIDER in
+ *   src/lib/constants.ts). The STT numbers this produces therefore do NOT
+ *   describe the shipped transcription path — the translation leg still does.
+ *   Port this to lib/stt/speechmatics-client.ts before trusting it for STT
+ *   tuning again; for a live A/B, use /dev/stt-compare instead.
  *   2. MT   — runs the result through the REAL Claude translation prompt
  *             (Haiku/Sonnet routing + the production system prompt).
  *

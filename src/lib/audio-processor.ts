@@ -13,8 +13,8 @@ export interface AudioPipeline {
    * The context's ACTUAL sample rate. We request 16000 below, but the
    * constructor `sampleRate` is only a hint — several Safari/iOS versions and
    * some hardware-locked devices ignore it and run at the native 44100/48000.
-   * The worklet frame size and the `sample_rate=` we send Deepgram MUST be
-   * derived from this real value, never the requested 16000, or Deepgram
+   * The worklet frame size and the sample rate we declare to the STT engine MUST
+   * be derived from this real value, never the requested 16000, or the engine
    * decodes the stream at the wrong rate (pitch/speed shifted) and the
    * transcript comes back empty or garbled. See createAudioPipeline.
    */
@@ -113,7 +113,7 @@ export function mapMicError(err: DOMException): Error {
  *       → lowpass(7kHz)    ← cuts outdoor hiss + crowd sibilance
  *       → compressor(4:1 @ -26dB)  ← brings up the distant quiet speech
  *       → gain(1.6×)       ← post-compression makeup for distance
- *           ├── AudioWorkletNode (with -55 dBFS noise gate) → Int16 PCM → Deepgram
+ *           ├── AudioWorkletNode (with -55 dBFS noise gate) → Int16 PCM → STT
  *           └── AnalyserNode (fed to level meter)
  *
  * Echo cancellation, noise suppression, and auto gain control are enabled at
@@ -121,10 +121,10 @@ export function mapMicError(err: DOMException): Error {
  * to produce non-silent audio (empirically verified — disabling it caused
  * the mic to read literal silence).
  *
- * Audio reaches Deepgram as Linear16 PCM in 40ms frames — small enough that
+ * Audio reaches the STT engine as Linear16 PCM in 40ms frames — small enough that
  * the time between speech and the first interim transcript stays under the
  * perceptual threshold for a "live" feel. Frames whose RMS falls below the
- * worklet's -55 dBFS gate are zero-filled so Deepgram sees clean silence
+ * worklet's -55 dBFS gate are zero-filled so the engine sees clean silence
  * during gaps between phrases (helps endpointing without breaking the WS
  * cadence).
  */
@@ -154,7 +154,7 @@ export async function createAudioPipeline(): Promise<AudioPipeline> {
   // Read back the rate the browser ACTUALLY gave us. On Chrome + modern Safari
   // this is 16000 (the request was honored). On browsers/devices that ignore
   // the constructor hint it's the native 44100/48000 — in which case the
-  // worklet frame math and Deepgram's sample_rate MUST both use this real
+  // worklet frame math and the engine's declared sample_rate MUST both use this real
   // value, not the requested 16000, or every PCM frame decodes at the wrong
   // rate and the transcript is empty/garbled. The WebAudio graph resamples the
   // mic source to this rate automatically, so the worklet always sees it.
@@ -201,7 +201,7 @@ export async function createAudioPipeline(): Promise<AudioPipeline> {
   // Compressor tuned for OUTDOOR PA distance — Madinah Haram courtyards,
   // open-air gatherings, conferences. The aggressive 4:1 / -26dB stack
   // brings up distant quiet speech that would otherwise sit too low for
-  // Deepgram. The earlier gentle 2.5:1 / -18dB was tuned for close-mic
+  // the STT engine. The earlier gentle 2.5:1 / -18dB was tuned for close-mic
   // (no pumping artifacts on direct speech) but left distant audio
   // under-amplified.
   const compressor = audioContext.createDynamicsCompressor();
@@ -213,7 +213,7 @@ export async function createAudioPipeline(): Promise<AudioPipeline> {
 
   // 1.6x makeup gain after compression. Distant outdoor PA captured by
   // a phone mic typically arrives 10-15dB lower than indoor close-mic;
-  // makeup gain compensates so Deepgram sees usable signal levels.
+  // makeup gain compensates so the engine sees usable signal levels.
   const gain = audioContext.createGain();
   gain.gain.value = 1.6;
 
@@ -223,7 +223,7 @@ export async function createAudioPipeline(): Promise<AudioPipeline> {
   compressor.connect(gain);
 
   // The downstream nodes are an AnalyserNode (visualizer) and an
-  // AudioWorkletNode (Deepgram). Neither is a real destination — Chrome's
+  // AudioWorkletNode (STT). Neither is a real destination — Chrome's
   // rendering thread does not always pull audio through a graph that has no
   // path to a destination, and the symptom is process() running with
   // silent input buffers and AnalyserNode reading zeros. A
@@ -238,7 +238,7 @@ export async function createAudioPipeline(): Promise<AudioPipeline> {
   await audioContext.audioWorklet.addModule("/pcm-worklet.js");
   // Frame size = 40ms of audio at the REAL context rate (640 @16kHz,
   // 1920 @48kHz). Passed to the worklet so its buffering matches the rate we
-  // declare to Deepgram; a hardcoded 640 at 48kHz would mislabel 13.3ms as
+  // declare to the engine; a hardcoded 640 at 48kHz would mislabel 13.3ms as
   // 40ms and break decoding.
   const frameSize = Math.max(160, Math.round(actualSampleRate * 0.04));
   const pcmNode = new AudioWorkletNode(audioContext, "pcm-worklet", {

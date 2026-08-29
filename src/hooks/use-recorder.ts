@@ -13,7 +13,7 @@ export type RecorderPhase =
   | "idle"
   | "starting"
   // Pipeline open and feeding the worklet, but the user hasn't tapped Record
-  // yet. The Deepgram WS opens during this phase so the user's first words
+  // yet. The STT WS opens during this phase so the user's first words
   // don't race the handshake; pcmNode frames are gated off until phase
   // flips to "recording".
   | "prewarmed"
@@ -227,7 +227,7 @@ export function useRecorder(): UseRecorderReturn {
   // Re-resume a suspended/interrupted AudioContext when the user returns to the
   // app while recording. On iOS an incoming call, Siri, Control Center, a
   // notification, or switching apps suspends the context; once suspended the
-  // worklet stops emitting PCM frames while the Deepgram WS stays open (KeepAlive)
+  // worklet stops emitting PCM frames while the STT WS stays open (KeepAlive)
   // and the UI still shows "Recording" — silent transcript loss for the rest of
   // the session. The wake lock prevents screen-sleep but NOT these interruptions.
   useEffect(() => {

@@ -31,7 +31,7 @@ prioritized fix list (§10) instead of a vague "it's not good enough."
 
 ## 2. Why play through a speaker — not headphones
 
-Do **not** test by piping clean YouTube audio straight into the browser. That tests Deepgram's
+Do **not** test by piping clean YouTube audio straight into the browser. That tests the STT
 model on pristine audio, which is the easy case and not your use case.
 
 The real input is sound that has left a PA system, traveled through air, bounced off hard walls,
@@ -133,7 +133,7 @@ Notes (what broke, where): ______________________________________
 
 The meter is wired to the audio **after** the processing pipeline — after the compressor and the
 1.6× makeup gain (`src/lib/audio-processor.ts`, analyser connected at the gain node). That's
-deliberate: it shows what Deepgram actually receives. But it has one important limitation:
+deliberate: it shows what the STT engine actually receives. But it has one important limitation:
 
 - **It measures signal *level*, not signal-to-noise *quality*.** The compressor + gain will boost a
   quiet, noisy, reverberant signal up to a healthy-looking level. So the meter can read **strong**
@@ -173,24 +173,38 @@ you can attribute the difference. (Values **and line numbers re-verified against
 2026-06-22** — all knob values unchanged; line numbers refreshed. If the pipeline is retuned later,
 refresh these again.)
 
+No line numbers below — they drifted the last time and sent people to the wrong code. Search for
+the symbol instead.
+
 | Symptom | Knob | Where | Direction |
 |---|---|---|---|
-| Too quiet (meter weak even up close) | makeup gain `1.6` | `src/lib/audio-processor.ts` (line 190) | raise toward `2.0–2.5` (watch for clipping) |
-| Distant speech under-amplified | compressor `threshold -26`, `ratio 4` | `src/lib/audio-processor.ts` (lines 180–182) | lower threshold to `-32`, raise ratio to `6:1` |
-| Low-frequency rumble / hum | highpass `120 Hz` | `src/lib/audio-processor.ts` (line 162) | raise to `150–180 Hz` (slight warmth loss) |
-| Hiss / crowd sibilance | lowpass `7000 Hz` | `src/lib/audio-processor.ts` (line 170) | lower to `5000–6000 Hz` (slight consonant dulling) |
-| Sentences fragment at every pause | `endpointing=500` | `src/app/api/deepgram/route.ts` (line 178) | raise to `800–1000` ms |
-| Side conversations bleed in | speaker-lock warmup `15 s`, min-duration `5 s` | `src/hooks/use-deepgram.ts` (lines 97–99) | lower warmup, raise min-duration |
-| Junk / low-confidence lines in transcript | `FINAL_CONFIDENCE_THRESHOLD 0.55` | `src/hooks/use-deepgram.ts` (line 83) | raise to `0.65–0.75` (drops quieter speech too) |
-| Near-silence padding the transcript | noise gate `−55 dBFS` | `public/pcm-worklet.js` (line 20) | raise toward `−50 dBFS` (stricter gate) |
+| Too quiet (meter weak even up close) | makeup gain `1.6` | `src/lib/audio-processor.ts` | raise toward `2.0–2.5` (watch for clipping) |
+| Distant speech under-amplified | compressor `threshold -26`, `ratio 4` | `src/lib/audio-processor.ts` | lower threshold to `-32`, raise ratio to `6:1` |
+| Low-frequency rumble / hum | highpass `120 Hz` | `src/lib/audio-processor.ts` | raise to `150–180 Hz` (slight warmth loss) |
+| Hiss / crowd sibilance | lowpass `7000 Hz` | `src/lib/audio-processor.ts` | lower to `5000–6000 Hz` (slight consonant dulling) |
+| Sentences fragment at every pause | `SPEECHMATICS.maxDelay 1.5` | `src/lib/constants.ts` | raise toward `2.5–4.0` s (more right-context, slower finals) |
+| Side conversations bleed in | `speakerLockWarmupMs 15 s`, `speakerLockMinDurationS 5` | `src/lib/constants.ts` | lower warmup, raise min-duration |
+| Junk / low-confidence lines in transcript | `finalConfidenceFloor 0.45` | `src/lib/constants.ts` | raise to `0.55–0.65` (drops quieter speech too) |
+| Lone speaker splits into "Speaker 1" + "2" | `diarizeWarmupMs` | `src/lib/constants.ts` | raise (Speechmatics 10 s, Deepgram 25 s) |
+| Near-silence padding the transcript | noise gate `−55 dBFS` | `public/pcm-worklet.js` | raise toward `−50 dBFS` (stricter gate) |
 
-The STT model itself is `nova-3` (`src/app/api/deepgram/route.ts`, line 140) — required for
-Arabic. If Arabic accuracy is fundamentally poor even with clean capture, the lever is the model,
-not these knobs, and that's a deeper investigation.
+Every STT knob now lives in one file — `src/lib/constants.ts`, in the `SPEECHMATICS` and
+`DEEPGRAM` blocks. Tune there, not in the hooks.
 
-> **Doc drift note:** `CLAUDE.md` still says `model=nova-2`. That is **stale** — the code runs
-> `nova-3`, because nova-2 returns HTTP 400 on any Arabic (`language=ar`) connection. Trust the
-> code, not CLAUDE.md, on this.
+The engine itself is **Speechmatics** (`operating_point: "enhanced"`), selected by `STT_PROVIDER`
+in that same file. If Arabic accuracy is fundamentally poor even with clean capture, the lever is
+the engine, not these knobs: flip `STT_PROVIDER` to `"deepgram"` (which runs `nova-3` — required
+for Arabic, since nova-2 returns HTTP 400 on any `language=ar` connection), or run both off one
+mic at `/dev/stt-compare` and read the two columns side by side.
+
+> ⚠️ `/dev/stt-compare` opens **two** paid realtime sessions per run, and the Speechmatics free
+> tier allows only **2 concurrent sessions app-wide** — so one comparison run blocks recording for
+> every other user. Set `NEXT_PUBLIC_STT_COMPARE=1` on a preview deployment for field use; never
+> in production.
+
+> **Known tuning issue:** `finalConfidenceFloor` is Arabic-tuned. In the 2026-07-25 language sweep
+> it discarded 100% of Hungarian STT. Both engines' floors sit in `constants.ts` precisely so that
+> decision can be made in one place.
 
 ---
 

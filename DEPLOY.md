@@ -13,14 +13,21 @@ GitHub integration: every push to `main` builds and deploys production.
 ## Why Vercel works (the server.js caveat)
 
 `server.js` (the Deepgram WebSocket proxy at `/api/deepgram-ws`) is
-**dev-only**. It exists to get around networks that block browser
-WebSockets to `wss://api.deepgram.com`. In production,
+**dev-only, and Deepgram-only**. It exists to get around networks that
+block browser WebSockets to `wss://api.deepgram.com`. In production,
 `src/app/api/deepgram/route.ts` detects Vercel (`VERCEL === "1"` or
 `NODE_ENV === "production"`), mints a short-lived Deepgram key via the
 management API, and the browser opens the WebSocket to Deepgram
 directly — no persistent Node process needed. Vercel never runs
 `server.js`; it builds with `next build` and serves routes as serverless
 functions.
+
+Note that the **primary** engine is Speechmatics, which has no proxy on
+either side: `/api/speechmatics` mints a JWT and the browser connects
+straight to `wss://global.rt.speechmatics.com/v2` in dev and prod alike.
+If a venue's network ever blocks that handshake the way one did for
+Deepgram, the fix is an equivalent proxy in `server.js` — not a silent
+fallback.
 
 ## How the build works
 
@@ -62,13 +69,31 @@ server-side unless marked `NEXT_PUBLIC_`:
 ```
 CONVEX_DEPLOY_KEY      (Production only — from Convex dashboard →
                         opulent-parakeet-508 → Settings → Deploy key)
-DEEPGRAM_API_KEY       your Deepgram key
+SPEECHMATICS_API_KEY   your Speechmatics key — REQUIRED. This is the
+                        primary STT engine; without it every recording
+                        fails with a 500 from /api/speechmatics.
 ANTHROPIC_API_KEY      sk-ant-api03-...
-SUNNAH_API_KEY         sunnah.com key     (optional)
-DEEPGRAM_PROJECT_ID    Deepgram project id (optional)
 NEXT_PUBLIC_APP_URL    https://tarjuman.live
-NEXT_PUBLIC_SENTRY_DSN your Sentry DSN    (optional; empty = Sentry off)
+DEEPGRAM_API_KEY       your Deepgram key   (optional — fallback engine only,
+                        used when STT_PROVIDER is flipped to "deepgram")
+DEEPGRAM_PROJECT_ID    Deepgram project id (optional)
+SUNNAH_API_KEY         sunnah.com key      (optional)
+NEXT_PUBLIC_SENTRY_DSN your Sentry DSN     (optional; empty = Sentry off)
 ```
+
+> `SPEECHMATICS_API_KEY` **is already set** in the live project — verified
+> 2026-08-29 by an unauthenticated `POST /api/speechmatics`, which returns
+> 401 (auth check) rather than 500 (missing key). It is listed here because
+> this guide previously omitted it, so a from-scratch redeploy following
+> these steps would have shipped an app that could not record.
+
+### Speechmatics concurrency — a launch constraint, not a config step
+
+The Speechmatics **free tier allows 2 concurrent realtime sessions across
+the entire app**. The third simultaneous recorder anywhere gets
+`quota_exceeded`. Upgrade the plan (Pro raises it to 50) before any real
+multi-user usage. `/dev/stt-compare` consumes **two** of those slots per
+run, which is why `NEXT_PUBLIC_STT_COMPARE` must stay unset in prod.
 
 Also enable **Settings → Environment Variables → Automatically expose
 System Environment Variables** so `NEXT_PUBLIC_VERCEL_ENV` is available

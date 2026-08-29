@@ -17,8 +17,8 @@ An interactive prototype is included in this package as `prototype.jsx`. Open it
 This app will primarily capture audio from **PA speakers in masjids, lecture halls, and conference rooms** — NOT direct close-mic speech. The phone mic picks up sound that has traveled through a speaker system, bounced off marble/concrete walls, mixed with crowd noise, coughs, AC hum, and ambient reverb.
 
 **This means:**
-1. Raw mic input will be noisy. The app MUST process audio through a Web Audio API pipeline (highpass → lowpass → compressor → gain) BEFORE sending to Deepgram. See the "Audio Capture Details" section for the complete pipeline code.
-2. Deepgram parameters must be tuned for noisy environments: `endpointing=500` (longer silence tolerance), `smart_format=true`, `model=nova-2` (most noise-resilient).
+1. Raw mic input will be noisy. The app MUST process audio through a Web Audio API pipeline (highpass → lowpass → compressor → gain) BEFORE sending it to the STT engine. See the "Audio Capture Details" section for the complete pipeline.
+2. STT parameters must be tuned for noisy environments. On Speechmatics that means `operating_point: "enhanced"` and `max_delay: 1.5` (trading latency for right-context so the model can correct itself); on the Deepgram fallback it means `endpointing=500` and `smart_format=true` on `nova-3`.
 3. An audio level monitor component must show users whether the mic is picking up adequate signal — if it's too quiet, prompt them to move closer to the speaker.
 4. Show first-time users positioning tips: hold phone close to speaker, point mic toward sound source, avoid covering mic.
 
@@ -30,7 +30,7 @@ This app will primarily capture audio from **PA speakers in masjids, lecture hal
 | Backend / DB | Convex | Real-time subscriptions, file storage, serverless, type-safe |
 | Auth | Convex Auth (email/password + Google OAuth) | Integrated, simple, handles sessions |
 | Styling | Tailwind CSS + shadcn/ui | Fast, mobile-first, accessible components |
-| Speech-to-Text | Deepgram (WebSocket streaming API) | Best real-time STT, excellent multilingual, low latency |
+| Speech-to-Text | **Speechmatics** realtime (WebSocket) — primary; **Deepgram** `nova-3` — fallback | Speechmatics won the 2026-08 Arabic bake-off: whole coherent sentences at ~1.00 confidence where nova-3 fragmented and dropped clauses. Deepgram stays wired behind a one-line switch (`STT_PROVIDER`). |
 | Translation | Anthropic Claude Haiku 4.5 (`claude-haiku-4-5-20251001`) | Preserves Islamic terminology (Allah, Subhan'Allah, ﷺ, etc.) where Google Translate flattens them. Single LLM provider. |
 | Summarization | Anthropic Claude Sonnet 4.6 (`claude-sonnet-4-6`) | High-quality contextual summaries, handles religious/academic terminology |
 | Hosting | Vercel | Zero-config Next.js deployment |
@@ -43,7 +43,10 @@ This app will primarily capture audio from **PA speakers in masjids, lecture hal
 CONVEX_DEPLOYMENT=
 NEXT_PUBLIC_CONVEX_URL=
 
-# Deepgram
+# Speechmatics — PRIMARY realtime STT
+SPEECHMATICS_API_KEY=
+
+# Deepgram — FALLBACK STT (only used when STT_PROVIDER = "deepgram")
 DEEPGRAM_API_KEY=
 
 # Anthropic (for translation + summaries)
@@ -58,12 +61,23 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 
 ## API SETUP GUIDE
 
-### Deepgram
+### Speechmatics (PRIMARY STT)
+1. Sign up at portal.speechmatics.com
+2. Generate an API key
+3. `/api/speechmatics` exchanges it for a short-lived JWT (`POST https://mp.speechmatics.com/v1/api_keys?type=rt`) so the long-lived key never reaches the browser
+4. Streaming endpoint: `wss://global.rt.speechmatics.com/v2`
+5. ⚠️ **Free tier = 2 concurrent sessions, app-wide.** The third simultaneous
+   recorder anywhere gets `quota_exceeded`. Must be upgraded before multi-user
+   launch — this is a hard launch constraint, not a tuning detail.
+
+### Deepgram (FALLBACK STT)
 1. Sign up at deepgram.com
 2. Create a new project
-3. Generate an API key with "Usage" permission
+3. Generate an API key with `keys:write` scope (prod mints short-lived session keys)
 4. Free tier: $200 in credit (covers ~775 hours of transcription)
 5. Streaming endpoint: `wss://api.deepgram.com/v1/listen`
+6. Only reached when `STT_PROVIDER` in `src/lib/constants.ts` is flipped to
+   `"deepgram"`, plus `/dev/stt-compare`, which always runs both engines.
 
 ### Anthropic Claude (translation + summaries)
 1. Go to console.anthropic.com
@@ -115,8 +129,10 @@ livetranscribe/
 │   │   │   └── session/[id]/page.tsx # View past session transcript + summary
 │   │   │
 │   │   └── api/
+│   │       ├── speechmatics/
+│   │       │   └── route.ts         # ⭐ Mint short-lived Speechmatics JWT (PRIMARY)
 │   │       ├── deepgram/
-│   │       │   └── route.ts         # Proxy: get temporary Deepgram auth token
+│   │       │   └── route.ts         # Proxy: temporary Deepgram token (fallback)
 │   │       ├── translate/
 │   │       │   └── route.ts         # Proxy: Claude translation API
 │   │       └── summarize/
@@ -144,15 +160,22 @@ livetranscribe/
 │   │       └── empty-state.tsx      # Empty states
 │   │
 │   ├── hooks/
-│   │   ├── use-deepgram.ts          # ⭐ WebSocket connection to Deepgram
+│   │   ├── use-stt.ts               # ⭐ Engine dispatcher (reads STT_PROVIDER)
+│   │   ├── use-speechmatics.ts      # ⭐ WebSocket connection to Speechmatics
+│   │   ├── use-deepgram.ts          # WebSocket connection to Deepgram (fallback)
 │   │   ├── use-translator.ts        # Translation hook
-│   │   ├── use-recorder.ts          # ⭐ MediaRecorder + Web Audio API processing pipeline
+│   │   ├── use-recorder.ts          # ⭐ Mic + Web Audio pipeline → AudioWorklet (Int16 PCM)
 │   │   └── use-auth.ts              # Auth state wrapper
 │   │
 │   ├── lib/
 │   │   ├── utils.ts                 # Utility functions
 │   │   ├── constants.ts             # Languages list, config values
-│   │   ├── deepgram.ts              # Deepgram client helper
+│   │   ├── stt/
+│   │   │   ├── types.ts             # Shared engine contract
+│   │   │   ├── speaker-lock.ts      # ⭐ Shared, tested "ignore side conversations" policy
+│   │   │   ├── keyterms.ts          # Islamic-vocabulary bias, shared by both engines
+│   │   │   ├── speechmatics-client.ts # Client used by /dev/stt-compare
+│   │   │   └── deepgram-client.ts   # Client used by /dev/stt-compare
 │   │   ├── audio-processor.ts       # ⭐ Web Audio API pipeline (highpass → lowpass → compressor → gain)
 │   │   └── languages.ts             # Supported language codes + labels
 │   │
@@ -231,29 +254,38 @@ Mutations:
 
 ## API ROUTES
 
-### `/api/deepgram/route.ts` — Get Temporary Deepgram Token
+### `/api/speechmatics/route.ts` — Mint a Speechmatics JWT (PRIMARY)
 
-Deepgram API keys should never be exposed to the client. This route creates a temporary token that the client uses to establish the WebSocket connection.
+`SPEECHMATICS_API_KEY` never reaches the browser. This route POSTs to
+`https://mp.speechmatics.com/v1/api_keys?type=rt` and returns a short-lived JWT
+(1h) plus the realtime URL; the client opens
+`wss://global.rt.speechmatics.com/v2?jwt=<token>` directly.
 
-```typescript
-import { NextResponse } from "next/server";
+A session longer than the TTL is fine: the hook re-fetches a fresh JWT on every
+connect, including every backoff reconnect, so a 6-hour dars keeps minting new
+credentials rather than riding one expiring token.
 
-export async function GET(req: Request) {
-  const url = new URL(req.url);
-  const language = url.searchParams.get("language") || "en";
+**Every STT credential route must carry the same three gates**, because minting
+a credential is what actually spends STT budget:
+1. `requireAuthFromHeader` → 401
+2. `checkRateLimit(userId, "transcribe")` → 429
+3. `getUsageFromHeader` plan cost gate → 402 (fails OPEN — the reactive UI is
+   the primary gate)
 
-  // Option A: Proxy the API key securely
-  // Return the key for client-side WebSocket (Deepgram supports this pattern)
-  // In production, use Deepgram's temporary key endpoint
+A gate that exists on only one engine's route silently stops gating anything the
+moment `STT_PROVIDER` changes. See `src/app/api/speechmatics/route.ts`.
 
-  return NextResponse.json({
-    key: process.env.DEEPGRAM_API_KEY,
-    url: `wss://api.deepgram.com/v1/listen?language=${language}&model=nova-2&punctuate=true&interim_results=true&endpointing=500&vad_events=true&smart_format=true&diarize=false&multichannel=false&encoding=opus&sample_rate=16000&filler_words=false`,
-  });
-}
-```
+### `/api/deepgram/route.ts` — Get Temporary Deepgram Token (FALLBACK)
 
-**Note:** For production, use Deepgram's temporary key API (`/v1/manage/keys`) to generate short-lived tokens. For MVP, passing the key to the client via this route is acceptable.
+Same trust model and the same three gates. In production it mints a short-lived
+key via Deepgram's management API. In dev it returns a token pointing at the
+`/api/deepgram-ws` loopback proxy in `server.js`, which exists because some
+networks block the browser's TLS WebSocket handshake to `api.deepgram.com`.
+Speechmatics has **no** such proxy — if a venue ever blocks it the same way, the
+fix is to add an equivalent proxy, not to fall back silently.
+
+See `src/app/api/deepgram/route.ts` for the implementation (`nova-3` is
+required for Arabic; `nova-2` returns HTTP 400 on any `language=ar` connection).
 
 ### `/api/translate/route.ts` — Claude Translation Proxy
 
@@ -325,56 +357,59 @@ ${transcript}`,
 
 ## THE RECORDING FLOW — CRITICAL IMPLEMENTATION DETAILS
 
-### `use-deepgram.ts` Hook (Most Important File)
+### The STT hooks (Most Important Files)
 
-This hook manages the WebSocket connection to Deepgram for real-time STT.
+Three files, one contract:
+
+- **`use-stt.ts`** — the dispatcher. Reads `STT_PROVIDER` from
+  `src/lib/constants.ts` and returns one engine's hook. Both hooks are *called*
+  unconditionally (React requires stable hook order); the inactive one gets
+  `enabled: false`, its documented idle path — no credential fetch, no socket,
+  no mic frames consumed. The record page never knows which engine is live.
+- **`use-speechmatics.ts`** — the primary engine.
+- **`use-deepgram.ts`** — the fallback engine.
+
+Both hooks expose an identical surface, so drift shows up as a type error in the
+dispatcher rather than at runtime:
 
 ```
+Props: { pcmNode, sourceLanguage, enabled, paused, mainSpeakerOnly }
+
 State:
-- connectionState: "idle" | "connecting" | "connected" | "paused" | "error"
-- transcript: Array of { id, text, isFinal, timestamp }
+- segments: LiveSegment[]      (final segments, already filtered)
+- interimText: string          (live partial, rendered faded)
+- connectionState: "idle" | "connecting" | "connected" | "reconnecting" | "error"
 - error: string | null
-
-Flow:
-1. startRecording(sourceLanguage):
-   a. Request microphone permission (navigator.mediaDevices.getUserMedia)
-   b. Fetch Deepgram token from /api/deepgram?language={sourceLanguage}
-   c. Open WebSocket to Deepgram with the token
-   d. Create MediaRecorder or use AudioContext + ScriptProcessorNode
-   e. Pipe audio chunks to WebSocket
-   f. Listen for WebSocket messages:
-      - Deepgram returns { channel.alternatives[0].transcript, is_final, speech_final }
-      - On interim results: update the current segment (shows text appearing live)
-      - On final results: finalize the segment, trigger translation
-   g. Set connectionState to "connected"
-
-2. pauseRecording():
-   a. Stop sending audio chunks to WebSocket (keep connection open)
-   b. Pause the MediaRecorder
-   c. Set connectionState to "paused"
-
-3. resumeRecording():
-   a. Resume MediaRecorder
-   b. Resume sending audio chunks
-   c. Set connectionState to "connected"
-
-4. stopRecording():
-   a. Stop MediaRecorder
-   b. Close WebSocket connection
-   c. Release microphone
-   d. Set connectionState to "idle"
-   e. Return final transcript
+- reconnectAttempt: number
+- resetTranscript(): void
 ```
+
+There is no `startRecording()`/`stopRecording()` — the hooks are **declarative**.
+`use-recorder.ts` owns the mic and hands over an `AudioWorkletNode`; flipping
+`enabled` opens or tears down the socket, and flipping `paused` gates outbound
+frames without dropping the connection.
+
+Shared filtering applied to every final segment, in order:
+1. **Confidence floor** — `DEEPGRAM.finalConfidenceFloor` /
+   `SPEECHMATICS.finalConfidenceFloor` (both 0.45, both in `lib/constants.ts`)
+2. **Off-language script gate** — `lib/script.ts`, shared by both hooks
+3. **Speaker lock** — `lib/stt/speaker-lock.ts`, the tested "ignore side
+   conversations" policy. Generic over the speaker key because Deepgram returns
+   numeric indices and Speechmatics returns labels like `"S1"`. Both engines run
+   this same module; a fallback whose speaker policy silently diverges from the
+   tested one is worse than no fallback.
+
+Reconnects use `RECONNECT_BACKOFF` and re-fetch credentials on every attempt.
 
 ### Audio Capture Details — SPEAKER/AMBIENT AUDIO HANDLING
 
 **CRITICAL CONTEXT:** This app will primarily be used to capture audio from SPEAKERS in masjids, lecture halls, and conference rooms — NOT direct microphone speech. The phone mic is picking up sound that has traveled through a PA system, bounced off marble/concrete walls, mixed with crowd noise, coughs, and ambient reverb. This is fundamentally harder than clean direct-mic input.
 
-**Strategy: Use the Web Audio API to clean the signal BEFORE sending to Deepgram.**
+**Strategy: Use the Web Audio API to clean the signal BEFORE sending it to the STT engine.**
 
 ```typescript
 // ═══════════════════════════════════════════════════
-// AUDIO PIPELINE: Mic → AudioContext → Processing → Deepgram
+// AUDIO PIPELINE: Mic → AudioContext → Processing → AudioWorklet → STT
 // ═══════════════════════════════════════════════════
 
 // 1. Capture mic with browser-level noise handling enabled
@@ -430,26 +465,24 @@ source
   .connect(compressor)
   .connect(gainNode);
 
-// 8. Create a MediaStream from the processed audio
-const destination = audioContext.createMediaStreamDestination();
-gainNode.connect(destination);
+// 8. Feed the processed signal into an AudioWorkletNode.
+//
+// ⚠️ NOT MediaRecorder. The shipped app does NOT use MediaRecorder or
+// webm/opus chunks — that was the original design and it is gone. Both engines
+// receive RAW LINEAR16 PCM from `public/pcm-worklet.js`: mono Int16 frames of
+// 40ms, with a -55 dBFS noise gate that zero-fills silence so the engine sees
+// clean silence rather than room tone. See `src/lib/audio-processor.ts`.
+const pcmNode = new AudioWorkletNode(audioContext, "pcm-worklet");
+gainNode.connect(pcmNode);
 
-// 9. Use the PROCESSED stream for MediaRecorder (not the raw mic stream)
-const processedStream = destination.stream;
-
-const mediaRecorder = new MediaRecorder(processedStream, {
-  mimeType: "audio/webm;codecs=opus",
-});
-
-mediaRecorder.ondataavailable = (event) => {
-  if (event.data.size > 0 && websocket.readyState === WebSocket.OPEN) {
-    websocket.send(event.data);
-  }
-};
-
-// Send data every 250ms for low latency
-mediaRecorder.start(250);
+// The STT hook attaches to pcmNode.port.onmessage and forwards frames.
+// Frames are dropped (not buffered) while paused.
 ```
+
+**CRITICAL — sample rate.** Browsers are free to ignore the requested 16000 and
+hand back 44100/48000. The rate declared to the engine MUST be read from
+`pcmNode.context.sampleRate` at connect time, never from the requested value, or
+every transcript comes back garbled. This bit iOS specifically.
 
 ### Audio Quality Tips (Document in UI or Onboarding)
 
@@ -464,27 +497,48 @@ For best results:
 • Quiet environments produce significantly better results
 ```
 
-### Deepgram Parameters Explained (for noisy audio)
+### Engine Parameters Explained (for noisy audio)
 
+All values live in `src/lib/constants.ts` (`SPEECHMATICS` / `DEEPGRAM` blocks)
+so both engines' knobs can be read side by side. Tune there, not in the hooks.
+
+**Speechmatics (primary)**
 ```
+operating_point: "enhanced"  — the accurate model, not the fast one.
+
+max_delay: 1.5               — final-transcript latency budget (vendor range
+                               0.7-4s). LOWER is snappier but gives the model
+                               less right-context to correct itself, which is
+                               exactly what we are paying it for. 1.5 produced
+                               the winning bake-off output.
+
+additional_vocab             — Islamic keyterms from lib/stt/keyterms.ts,
+                               always on for this engine.
+
+diarization + prefer_current_speaker — held one stable label across testing,
+                               which is why its diarize warmup is 10s vs
+                               Deepgram's 25s.
+```
+
+**Known trade:** Speechmatics finals land ~1.3-1.5s behind the speaker vs
+Deepgram's ~0.4-0.8s. Accuracy wins — the transcript is the product.
+
+**Deepgram (fallback)**
+```
+model=nova-3        — REQUIRED for Arabic. nova-2 returns HTTP 400 on any
+                       /listen connection with language=ar. nova-3 is a strict
+                       superset of nova-2's language coverage.
+
 endpointing=500     — Wait 500ms of silence before finalizing (up from 300ms).
                        Speakers in masjids pause between sentences. A longer
                        endpointing window prevents premature segment breaks.
 
-smart_format=true   — Deepgram applies intelligent formatting (numbers, dates,
-                       punctuation). Reduces post-processing needed.
+smart_format=true   — Intelligent formatting (numbers, dates, punctuation).
 
-model=nova-2        — Deepgram's most accurate model. Better at handling
-                       noisy audio than nova-1.
-
-For Arabic specifically, Deepgram's nova-2 model handles:
-- Modern Standard Arabic (MSA) — what most khutbahs use
-- Some dialectal Arabic — varies by region
-- Quran recitation — generally accurate for well-known verses
-
-If accuracy is poor, experiment with:
-  model=nova-2-general   (general model, sometimes better for noisy environments)
-  model=whisper-large    (Deepgram's hosted Whisper, slower but very accurate for Arabic)
+keyterm=…           — OPT-IN behind ?keyterms=1, and never proven on a real
+                       Arabic session. Deepgram rejects unsupported params at
+                       the WS handshake, which would break recording outright,
+                       so this stays behind a flag.
 ```
 
 ### Audio Level Monitor (Build This)
@@ -513,7 +567,7 @@ Wire this into the `audio-visualizer.tsx` component. Instead of a simple pulsing
 ### Translation Pipeline
 
 ```
-When Deepgram returns a FINAL transcript segment:
+When the STT engine returns a FINAL transcript segment:
 1. Send the text to /api/translate with source + target language
 2. When translation returns, create a TranscriptSegment:
    { id: uuid(), sourceText, translatedText, timestamp }
@@ -522,7 +576,7 @@ When Deepgram returns a FINAL transcript segment:
    - Don't save every segment individually — too many mutations
    - Accumulate segments locally, flush in batches
 
-When Deepgram returns an INTERIM result:
+When the STT engine returns an INTERIM result:
 1. Show it in the UI with reduced opacity (it will change)
 2. Do NOT translate interim results (wastes API calls)
 3. Replace with the final version when it arrives
@@ -532,16 +586,15 @@ When Deepgram returns an INTERIM result:
 
 ```
 PAUSE:
-- MediaRecorder.pause()
-- Stop sending data to WebSocket
-- Keep WebSocket connection alive (Deepgram has a 10-second timeout for silence)
-- Send a keepAlive message if needed: websocket.send(JSON.stringify({ type: "KeepAlive" }))
+- Set the hook's `paused` prop — the worklet's frames are dropped, not buffered
+- Keep the WebSocket connection alive (engines time out on silence)
+- Send a keepAlive: Deepgram every DEEPGRAM.keepAliveIntervalMs (5s);
+  Speechmatics keeps the socket warm the same way
 - Save any pending segments to Convex
 - UI shows paused state with resume button
 
 RESUME:
-- MediaRecorder.resume()
-- Resume sending audio data
+- Clear `paused` — the worklet resumes forwarding frames
 - Continue appending segments with correct timestamps
 - A visual indicator that recording has resumed
 
@@ -715,10 +768,10 @@ An interactive prototype is included in this package as `prototype.tsx`. This is
 9. Set up environment variables
 
 ### Phase 2: Recording Core (Critical Path)
-10. Create `/api/deepgram/route.ts` — Deepgram token proxy
+10. Create `/api/speechmatics/route.ts` (primary) and `/api/deepgram/route.ts` (fallback) — STT credential routes. Both MUST carry auth + rate limit + plan cost gate.
 11. Create `/api/translate/route.ts` — Claude (Haiku 4.5) translation proxy
-12. Build `use-recorder.ts` hook — microphone access, Web Audio API processing pipeline (highpass → lowpass → compressor → gain), MediaRecorder on PROCESSED stream
-13. Build `use-deepgram.ts` hook — WebSocket connection, audio streaming, transcript parsing
+12. Build `use-recorder.ts` hook — microphone access, Web Audio API processing pipeline (highpass → lowpass → compressor → gain), then an AudioWorkletNode on the PROCESSED signal emitting Int16 PCM (NOT MediaRecorder)
+13. Build `use-speechmatics.ts` + `use-deepgram.ts` hooks behind the `use-stt.ts` dispatcher — WebSocket connection, PCM streaming, transcript parsing, shared speaker lock
 14. Build `use-translator.ts` hook — translate final segments via API route
 15. Build `language-selector.tsx` — source + target language pickers with RTL flag
 16. Build `record-button.tsx` — record/pause/resume/stop state machine
@@ -770,27 +823,29 @@ An interactive prototype is included in this package as `prototype.tsx`. This is
 - [ ] Mobile: full flow works on phone-sized viewport, large touch targets
 - [ ] Screen stays on during recording (Wake Lock)
 - [ ] Dark mode looks correct on all pages
-- [ ] Error states: no mic, Deepgram disconnection, translation failure — all handled gracefully
+- [ ] Error states: no mic, STT disconnection, translation failure — all handled gracefully
+- [ ] Fallback regression: flip `STT_PROVIDER` to `"deepgram"`, record, confirm the speaker lock still locks and drops side speakers after the 25s diarize warmup — then flip back
 - [ ] Audio processing: highpass + lowpass + compressor + gain pipeline is active (verify in code)
 - [ ] Audio visualizer: shows real signal levels, "move closer" prompt when signal too weak
 - [ ] Speaker audio test: play Arabic khutbah through a speaker, capture from 1-2 meters away, verify transcript accuracy is usable
 
 ## CRITICAL REMINDERS
 
-1. **Never expose API keys to the client.** All API calls (Deepgram token, translate, summarize) go through Next.js API routes.
-2. **Deepgram WebSocket is the exception** — the client connects directly to Deepgram's WSS endpoint using a temporary key fetched from your API route. This is Deepgram's recommended pattern.
+1. **Never expose API keys to the client.** All API calls (STT credentials, translate, summarize) go through Next.js API routes. Every credential route carries auth + rate limit + plan cost gate — a gate on only one engine's route stops gating anything the moment `STT_PROVIDER` changes.
+2. **The STT WebSocket is the exception** — the client connects directly to the engine's WSS endpoint using a short-lived credential fetched from the API route (a Speechmatics JWT, or a Deepgram temp key). This is both vendors' recommended pattern.
 3. **Batch segment saves.** Don't call a Convex mutation for every single transcript segment — accumulate locally and save every 5 seconds or on pause/stop.
 4. **RTL support is not optional.** Arabic is the primary source language. If RTL is broken, the app is broken.
 5. **Interim results are NOT translated.** Only translate final results. Translating interim results wastes API calls (they change constantly).
 6. **The transcript IS the product.** If the transcript display is hard to read, too small, or doesn't auto-scroll, the entire app fails. Make it beautiful.
 7. **Mobile-first.** This app is used in lecture halls on phones. Desktop is secondary.
 8. **Dark mode only for MVP.** Bright screens in a masjid are disruptive.
-9. **Handle Deepgram disconnections gracefully.** WebSockets drop. Auto-reconnect with exponential backoff. Don't lose transcript segments.
+9. **Handle STT disconnections gracefully.** WebSockets drop. Auto-reconnect with exponential backoff (`RECONNECT_BACKOFF`), re-fetching credentials each attempt. Don't lose transcript segments.
 10. **Test with Arabic.** English STT is easy mode. Arabic is the real test. Record 5 minutes of an Arabic khutbah from YouTube and verify accuracy before building the full UI.
-11. **Audio comes from SPEAKERS, not direct mic.** The phone is capturing sound from a PA system in a reverberant room (marble walls, crowd noise, AC hum). The Web Audio API processing pipeline (highpass → lowpass → compressor → gain) is NOT optional — it is the difference between usable and unusable transcription. Always process audio before sending to Deepgram.
+11. **Audio comes from SPEAKERS, not direct mic.** The phone is capturing sound from a PA system in a reverberant room (marble walls, crowd noise, AC hum). The Web Audio API processing pipeline (highpass → lowpass → compressor → gain) is NOT optional — it is the difference between usable and unusable transcription. Always process audio before sending it to the engine.
 12. **Audio level visualizer is functional, not decorative.** Users need to know if the app is "hearing" the speaker well enough. Show real signal levels. If the level is too low, show a "Move closer to the speaker" prompt. This prevents users from sitting through a 30-minute lecture only to find out the transcript is garbage.
-13. **Deepgram endpointing is set to 500ms** (not the default 300ms) because speakers in masjids pause naturally between sentences. Too-short endpointing creates fragmented segments that break sentence structure and make translation worse.
+13. **Segment boundaries are tuned for pauses.** Speakers in masjids pause naturally between sentences, and too-short boundaries create fragmented segments that break sentence structure and make translation worse. Speechmatics: `max_delay: 1.5`. Deepgram: `endpointing=500` (not the default 300ms).
 14. **Test in a REAL noisy environment.** Play an Arabic khutbah through a phone speaker at moderate volume, place a second phone 1-2 meters away, and capture with the app. This simulates the actual use case far better than a clean YouTube feed through headphones.
+15. **Two engines, one policy.** Speechmatics is primary; Deepgram is a live fallback behind `STT_PROVIDER`. Anything that filters or shapes transcript output — confidence floors, the off-language script gate, the speaker lock — must be SHARED, not reimplemented per engine. A fallback that silently diverges only reveals it during an outage, which is the worst moment to find out. `/dev/stt-compare` runs both engines off one mic; it is dev-gated because each run burns two of the two available concurrent Speechmatics sessions.
 
 <!-- convex-ai-start -->
 

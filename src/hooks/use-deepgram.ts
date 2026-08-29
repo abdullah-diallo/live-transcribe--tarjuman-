@@ -3,11 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuthToken } from "@convex-dev/auth/react";
 import type { ConnectionState, LiveSegment } from "@/types";
-import {
-  DEEPGRAM_KEEPALIVE_INTERVAL_MS,
-  RECONNECT_BACKOFF,
-} from "@/lib/constants";
+import { DEEPGRAM, RECONNECT_BACKOFF } from "@/lib/constants";
 import { isOffLanguageScript } from "@/lib/script";
+import { createSpeakerLock } from "@/lib/stt/speaker-lock";
 
 // Connection/transcript debug logs — DEV ONLY. In production this is a no-op so
 // transcript text is never written to the browser console (privacy) and the
@@ -87,45 +85,6 @@ type DeepgramMessage =
   | { type: "UtteranceEnd" }
   | { type: "SpeechStarted" };
 
-/**
- * Drop a final segment if Deepgram's confidence falls below this threshold.
- * Clean native-language speech scores 0.7–0.95, but FAR-FIELD PA capture in a
- * reverberant masjid (the primary use case) regularly drags real, correctly-
- * transcribed sentences down into the 0.45–0.6 band. A 0.55 floor was silently
- * discarding that legitimate speech — the "I'm talking but nothing appears"
- * report. Lowered to 0.45 so genuine quiet/distant speech survives; the
- * remaining off-language transliteration noise that lands in this band is
- * still caught downstream (the off-language script gate below + the LLM
- * transliteration/noise verdict in /api/translate, which fails OPEN — it keeps
- * the source card, never the reverse). Tunable; raise if noise creeps in.
- */
-const FINAL_CONFIDENCE_THRESHOLD = 0.45;
-
-/**
- * Don't paint interim text below this confidence. Interims are partial
- * hypotheses so they score lower than finals — this floor is deliberately
- * lenient. It exists so off-language speech (which Deepgram, forced to the
- * session language, transcribes as low-confidence transliterated noise)
- * doesn't continuously flash garbage in the live view while every final
- * gets dropped by the filters downstream. Real source-language speech
- * crosses 0.4 within the first word or two.
- */
-const INTERIM_CONFIDENCE_THRESHOLD = 0.4;
-
-/** Lock policy: don't lock until the session has been active this long. */
-const SPEAKER_LOCK_WARMUP_MS = 15_000;
-/** Lock policy: minimum speech duration (seconds) before any speaker can be locked. */
-const SPEAKER_LOCK_MIN_DURATION_S = 5;
-/**
- * Deepgram's LIVE diarizer ascribes all speech to speaker 0 for the first
- * ~20-30s, then re-clusters and may re-number the SAME speaker to a higher
- * index. Ignore diarization (no lock accounting, no per-segment speaker id)
- * within this window so a lone speaker isn't split into "Speaker 1" + "2".
- */
-const SPEAKER_DIARIZE_WARMUP_MS = 25_000;
-/** Off-language drop: only drop if the language-detection confidence exceeds this. */
-const LANGUAGE_MISMATCH_DROP_THRESHOLD = 0.7;
-
 function makeId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
@@ -198,17 +157,21 @@ export function useDeepgram({
 
   // Session-wide speaker lock. Once locked, segments where the dominant
   // speaker isn't the locked speaker are dropped (per user policy: "ignore
-  // side conversations"). Refs survive WS reconnects within the same session
-  // and are reset only when the hook teardown fires (enabled=false / unmount).
-  const lockedSpeakerRef = useRef<number | null>(null);
-  const speakerDurationsRef = useRef<Map<number, number>>(new Map());
+  // side conversations"). The lock survives WS reconnects within the same
+  // session and is reset only when the hook teardown fires (enabled=false /
+  // unmount).
+  //
+  // Deepgram keys speakers by numeric index; Speechmatics uses labels like
+  // "S1". Same module, same policy, different key type — which is why the lock
+  // is generic. See src/lib/stt/speaker-lock.ts.
+  const speakerLockRef = useRef(
+    createSpeakerLock<number>({
+      warmupMs: DEEPGRAM.speakerLockWarmupMs,
+      minDurationS: DEEPGRAM.speakerLockMinDurationS,
+      diarizeWarmupMs: DEEPGRAM.diarizeWarmupMs,
+    }),
+  );
   const sessionStartRef = useRef<number | null>(null);
-  // Re-base Deepgram's raw speaker indices to first-seen display order so the
-  // first real speaker is always 0 ("Speaker 1"), regardless of how the
-  // diarizer numbers them after warmup re-clustering. Display-only — the lock
-  // still operates on raw indices.
-  const speakerRemapRef = useRef<Map<number, number>>(new Map());
-  const nextSpeakerRef = useRef(0);
 
   const resetTranscript = useCallback(() => {
     setSegments([]);
@@ -222,11 +185,8 @@ export function useDeepgram({
       // Reset speaker-lock state at the end of a session so the next session
       // starts fresh. Keeping it across stop/start would carry a stale lock
       // from a previous speaker into a new recording.
-      lockedSpeakerRef.current = null;
-      speakerDurationsRef.current = new Map();
+      speakerLockRef.current.reset();
       sessionStartRef.current = null;
-      speakerRemapRef.current = new Map();
-      nextSpeakerRef.current = 0;
       return;
     }
 
@@ -470,7 +430,7 @@ export function useDeepgram({
         if (msg.is_final) {
           const alt = msg.channel.alternatives[0];
           const confidence = alt?.confidence ?? 0;
-          if (confidence < FINAL_CONFIDENCE_THRESHOLD) {
+          if (confidence < DEEPGRAM.finalConfidenceFloor) {
             dbg(
               `[deepgram] dropped low-confidence final (${confidence.toFixed(
                 2
@@ -503,7 +463,7 @@ export function useDeepgram({
           const langConf = msg.channel.language_confidence ?? 0;
           if (
             detectedLang &&
-            langConf >= LANGUAGE_MISMATCH_DROP_THRESHOLD &&
+            langConf >= DEEPGRAM.languageMismatchDropThreshold &&
             !detectedLang.toLowerCase().startsWith(sourceLanguage.toLowerCase())
           ) {
             dbg(
@@ -541,91 +501,63 @@ export function useDeepgram({
 
           // Deepgram's live diarizer is unreliable for the first ~25s: it parks
           // all speech on speaker 0, then re-clusters and may renumber the same
-          // person to a higher index. Within that window we ignore diarization
-          // entirely — no lock accounting, no per-segment speaker id — so a lone
-          // khateeb isn't split into "Speaker 1" + "Speaker 2".
+          // person to a higher index. The lock ignores diarization entirely
+          // within that window (DEEPGRAM.diarizeWarmupMs) — no accounting, no
+          // per-segment speaker id — so a lone khateeb isn't split into
+          // "Speaker 1" + "Speaker 2".
           const sessionAgeMs = sessionStartRef.current
             ? Date.now() - sessionStartRef.current
             : 0;
-          const inDiarizeWarmup = sessionAgeMs < SPEAKER_DIARIZE_WARMUP_MS;
+          const lock = speakerLockRef.current;
 
           // Speaker lock (operates on RAW indices) — accumulate per-speaker
           // speech duration across the session; once we have enough signal,
           // lock onto the speaker with the most total speech and drop later
           // segments dominated by anyone else. This implements "ignore side
-          // conversations and sounds". Skipped during the diarize warmup so the
-          // lock can't snap onto a transient warmup mis-attribution.
-          if (!inDiarizeWarmup) {
-            if (words.length > 0) {
-              for (const w of words) {
-                if (typeof w.speaker !== "number") continue;
-                const dur = (w.end ?? 0) - (w.start ?? 0);
-                if (dur <= 0) continue;
-                speakerDurationsRef.current.set(
-                  w.speaker,
-                  (speakerDurationsRef.current.get(w.speaker) ?? 0) + dur
-                );
-              }
-            }
-            if (lockedSpeakerRef.current === null) {
-              // Lock-fire: session active long enough AND some speaker has
-              // accumulated enough speech. The warmup keeps the lock from
-              // snapping onto a brief opening cough or unrelated voice.
-              if (sessionAgeMs >= SPEAKER_LOCK_WARMUP_MS) {
-                let bestSpeaker: number | null = null;
-                let bestDur = -1;
-                for (const [s, d] of speakerDurationsRef.current) {
-                  if (d > bestDur) {
-                    bestDur = d;
-                    bestSpeaker = s;
-                  }
-                }
-                if (
-                  bestSpeaker !== null &&
-                  bestDur >= SPEAKER_LOCK_MIN_DURATION_S
-                ) {
-                  lockedSpeakerRef.current = bestSpeaker;
-                  dbg(
-                    `[deepgram] locked to speaker ${bestSpeaker} after ${(
-                      sessionAgeMs / 1000
-                    ).toFixed(1)}s (${bestDur.toFixed(1)}s of speech)`
-                  );
-                }
-              }
-            } else if (
-              mainSpeakerOnlyRef.current &&
-              rawSpeaker !== undefined &&
-              rawSpeaker !== lockedSpeakerRef.current
-            ) {
-              // Locked, "main speaker only" is ON, and this segment's dominant
-              // speaker isn't the locked one. Drop it — it's a side
-              // conversation. When the toggle is OFF we keep every speaker's
-              // segments (the lock still tracks durations above, so flipping
-              // the toggle ON later takes effect immediately).
-              dbg(
-                `[deepgram] dropped side-speaker segment (speaker=${rawSpeaker}, locked=${lockedSpeakerRef.current}): "${transcript.slice(
-                  0,
-                  60
-                )}"`
-              );
-              setInterimText("");
-              return;
-            }
+          // conversations and sounds".
+          for (const w of words) {
+            if (typeof w.speaker !== "number") continue;
+            lock.observe(w.speaker, (w.end ?? 0) - (w.start ?? 0), sessionAgeMs);
           }
 
-          // Display speaker: re-base raw indices to first-seen order so the main
-          // speaker reads as "Speaker 1" regardless of how Deepgram numbered it.
+          const lockedBefore = lock.locked();
+          lock.maybeLock(sessionAgeMs);
+          const lockedNow = lock.locked();
+          if (lockedBefore === null && lockedNow !== null) {
+            dbg(
+              `[deepgram] locked to speaker ${lockedNow} after ${(
+                sessionAgeMs / 1000
+              ).toFixed(1)}s of session`
+            );
+          }
+
+          // Locked, "main speaker only" is ON, and this segment's dominant
+          // speaker isn't the locked one. Drop it — it's a side conversation.
+          // When the toggle is OFF we keep every speaker's segments (the lock
+          // still tracks durations above, so flipping the toggle ON later takes
+          // effect immediately).
+          if (
+            lock.shouldDrop(
+              rawSpeaker,
+              sessionAgeMs,
+              mainSpeakerOnlyRef.current
+            )
+          ) {
+            dbg(
+              `[deepgram] dropped side-speaker segment (speaker=${rawSpeaker}, locked=${lockedNow}): "${transcript.slice(
+                0,
+                60
+              )}"`
+            );
+            setInterimText("");
+            return;
+          }
+
+          // Display speaker: re-based to first-seen order so the main speaker
+          // reads as "Speaker 1" regardless of how Deepgram numbered it.
           // Undefined during the diarize warmup (no reliable id yet) — the badge
           // is hidden for those segments, which is correct for a lone speaker.
-          let speaker: number | undefined;
-          if (!inDiarizeWarmup && rawSpeaker !== undefined) {
-            let display = speakerRemapRef.current.get(rawSpeaker);
-            if (display === undefined) {
-              display = nextSpeakerRef.current++;
-              speakerRemapRef.current.set(rawSpeaker, display);
-            }
-            speaker = display;
-          }
+          const speaker = lock.displayIndex(rawSpeaker, sessionAgeMs);
 
           setSegments((prev) => [
             ...prev,
@@ -649,7 +581,7 @@ export function useDeepgram({
           // floor — a kept higher-confidence interim beats flashing noise.
           const interimConfidence =
             msg.channel?.alternatives?.[0]?.confidence ?? 1;
-          if (interimConfidence >= INTERIM_CONFIDENCE_THRESHOLD) {
+          if (interimConfidence >= DEEPGRAM.interimConfidenceFloor) {
             setInterimText(transcript);
           }
         }
@@ -749,7 +681,7 @@ export function useDeepgram({
           /* ignore */
         }
       }
-    }, DEEPGRAM_KEEPALIVE_INTERVAL_MS);
+    }, DEEPGRAM.keepAliveIntervalMs);
     return () => window.clearInterval(interval);
   }, [paused, enabled]);
 
