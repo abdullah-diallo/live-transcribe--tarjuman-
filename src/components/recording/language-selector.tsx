@@ -12,23 +12,55 @@ interface LanguageSelectorProps {
   onChange: (next: { sourceLang: string; targetLang: string }) => void;
 }
 
+/** How long the outgoing language name takes to fade away before the incoming
+ *  one starts arriving. Kept short — this is a hand-off, not a scene change. */
+const VALUE_OUT_MS = 150;
+
 /**
  * One language tile ("Listening to" / "Translate to"). The border is set inline
  * (so a Tailwind `hover:` class can't win over it), so the hover state is driven
  * in JS: on hover the outline turns accent-green and gains a soft green glow —
  * matching the app's "green glow + outline" hover language. pointerenter/leave
  * fire on touch too, so mobile gets the same tap feedback.
+ *
+ * `slide` is the direction the OTHER tile lies in (+1 = to the right, -1 = to
+ * the left). The value leaves toward that side and the replacement arrives from
+ * that same side, so on a swap the two names read as crossing over each other
+ * rather than blinking in place.
  */
 function LangButton({
   label,
   value,
+  slide,
+  reduceMotion,
   onClick,
 }: {
   label: string;
   value: string;
+  slide: 1 | -1;
+  reduceMotion: boolean;
   onClick: () => void;
 }) {
   const [hover, setHover] = useState(false);
+
+  // `shown` lags `value` by one fade. `away` is DERIVED from the two being out
+  // of step rather than being its own state — so a second swap mid-flight (which
+  // reverts `value` back to `shown`) simply settles the name back in place
+  // instead of stranding it at opacity 0.
+  const [shown, setShown] = useState(value);
+  const away = shown !== value;
+
+  useEffect(() => {
+    if (value === shown) return;
+    // Deferred rather than set synchronously even at 0ms, so this never fires a
+    // setState directly inside the effect body.
+    const t = window.setTimeout(
+      () => setShown(value),
+      reduceMotion ? 0 : VALUE_OUT_MS
+    );
+    return () => window.clearTimeout(t);
+  }, [value, shown, reduceMotion]);
+
   return (
     <button
       type="button"
@@ -47,8 +79,22 @@ function LangButton({
       }}
     >
       <div className="section-label mb-1">{label}</div>
-      <div className="text-[15px] font-bold" style={{ color: COLORS.w }}>
-        {value}
+      {/* Only the value animates — the "Listening to" / "Translate to" label is
+          a fixed property of the tile and stays put. */}
+      <div
+        className="text-[15px] font-bold"
+        style={{
+          color: COLORS.w,
+          opacity: away ? 0 : 1,
+          transform: away ? `translateX(${slide * 14}px)` : "translateX(0)",
+          transition: reduceMotion
+            ? "none"
+            : away
+              ? `opacity ${VALUE_OUT_MS}ms ease-in, transform ${VALUE_OUT_MS}ms ease-in`
+              : "opacity 260ms ease-out, transform 260ms cubic-bezier(0.22, 1, 0.36, 1)",
+        }}
+      >
+        {shown}
       </div>
     </button>
   );
@@ -95,6 +141,8 @@ export function LanguageSelector({
       <LangButton
         label="Listening to"
         value={getLangName(sourceLang)}
+        slide={1}
+        reduceMotion={reduceMotion}
         onClick={() => setPickerOpen("source")}
       />
 
@@ -150,6 +198,8 @@ export function LanguageSelector({
       <LangButton
         label="Translate to"
         value={getLangName(targetLang)}
+        slide={-1}
+        reduceMotion={reduceMotion}
         onClick={() => setPickerOpen("target")}
       />
 
