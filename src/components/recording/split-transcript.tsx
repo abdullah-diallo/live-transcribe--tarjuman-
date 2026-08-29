@@ -1,6 +1,6 @@
 "use client";
 
-import { memo } from "react";
+import { memo, type CSSProperties } from "react";
 import { COLORS } from "@/lib/constants";
 import { isRtl, getLangName } from "@/lib/utils";
 import { useStickyBottom } from "@/hooks/use-sticky-bottom";
@@ -14,6 +14,17 @@ import {
   type LiveTranscriptProps,
 } from "./live-transcript";
 import type { LiveSegment } from "@/types";
+
+/**
+ * Per-variant glass tint. `.glass-tile` (globals.css) paints the material —
+ * fill, rim, catch-light, underside shade, hover glow; these two custom
+ * properties are all a variant needs to change.
+ */
+function tile(tint: string, rim: string): CSSProperties {
+  return { "--tile-tint": tint, "--tile-rim": rim } as CSSProperties;
+}
+
+const TILE = "glass-tile rounded-[18px] px-4 py-3";
 
 /**
  * One row in the SOURCE pane, memoized so a parent re-render (interim text /
@@ -34,29 +45,42 @@ const SplitSourceRow = memo(function SplitSourceRow({
   showSpeakerBadges: boolean;
 }) {
   const sc = speakerColor(seg.speaker);
+  // With one speaker the tile stays neutral smoked glass; once diarization
+  // splits the room, each speaker tints their own glass instead of needing a
+  // separate accent bar.
+  const tinted = showSpeakerBadges && typeof seg.speaker === "number";
   return (
-    <AnimateIn
-      variant="source"
-      className="mb-3"
-      style={{ textAlign: sourceRtl ? "right" : "left" }}
-    >
-      {showSpeakerBadges && typeof seg.speaker === "number" && (
-        <div
-          className="text-[10px] font-bold uppercase tracking-wider mb-[2px]"
-          style={{ color: sc }}
-        >
-          Speaker {seg.speaker + 1}
-        </div>
-      )}
+    // The tile is a CHILD of AnimateIn, not AnimateIn itself: anime.js writes
+    // an inline transform on its own element, which would override the
+    // stylesheet's :hover lift.
+    <AnimateIn variant="source" className="mb-[10px]">
       <div
+        className={TILE}
         style={{
-          color: COLORS.t2,
-          fontSize: sourceFontSize,
-          lineHeight: 1.7,
-          fontWeight: sourceRtl ? 500 : 400,
+          ...(tinted
+            ? tile(`${sc}14`, `${sc}40`)
+            : tile("rgba(255,255,255,0.05)", "rgba(255,255,255,0.09)")),
+          textAlign: sourceRtl ? "right" : "left",
         }}
       >
-        {text}
+        {showSpeakerBadges && typeof seg.speaker === "number" && (
+          <div
+            className="text-[10px] font-bold uppercase tracking-wider mb-[2px]"
+            style={{ color: sc }}
+          >
+            Speaker {seg.speaker + 1}
+          </div>
+        )}
+        <div
+          style={{
+            color: COLORS.t2,
+            fontSize: sourceFontSize,
+            lineHeight: 1.7,
+            fontWeight: sourceRtl ? 500 : 400,
+          }}
+        >
+          {text}
+        </div>
       </div>
     </AnimateIn>
   );
@@ -80,13 +104,18 @@ const SplitTargetRow = memo(function SplitTargetRow({
   targetFontSize: number;
   onRetry?: (id: string) => void;
 }) {
-  return (
-    <div
-      className="mb-3"
-      style={{ textAlign: targetRtl ? "right" : "left" }}
-    >
-      {translated && translated.length > 0 ? (
-        <AnimateIn variant="translation">
+  const align: CSSProperties = { textAlign: targetRtl ? "right" : "left" };
+
+  if (translated && translated.length > 0) {
+    return (
+      <AnimateIn variant="translation" className="mb-[10px]">
+        <div
+          className={TILE}
+          style={{
+            ...tile("rgba(46,204,113,0.07)", "rgba(46,204,113,0.20)"),
+            ...align,
+          }}
+        >
           <div
             style={{
               color: COLORS.w,
@@ -97,23 +126,48 @@ const SplitTargetRow = memo(function SplitTargetRow({
           >
             {renderTextWithLinks(translated)}
           </div>
-        </AnimateIn>
-      ) : pending ? (
+        </div>
+      </AnimateIn>
+    );
+  }
+
+  if (pending) {
+    return (
+      <div
+        className={`${TILE} mb-[10px]`}
+        style={{
+          ...tile("rgba(46,204,113,0.04)", "rgba(46,204,113,0.12)"),
+          ...align,
+        }}
+      >
         <div className="text-[14px]" style={{ color: COLORS.t3 }}>
           …translating
         </div>
-      ) : error ? (
-        <button
-          type="button"
-          onClick={() => onRetry?.(seg.id)}
-          className="text-left cursor-pointer text-[13px] font-semibold"
-          style={{ color: COLORS.amber }}
-        >
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <button
+        type="button"
+        onClick={() => onRetry?.(seg.id)}
+        className={`${TILE} mb-[10px] w-full text-left cursor-pointer active:scale-[0.99]`}
+        style={{
+          ...tile("rgba(245,158,11,0.09)", "rgba(245,158,11,0.28)"),
+          ...align,
+        }}
+      >
+        <div className="text-[13px] font-semibold" style={{ color: COLORS.amber }}>
           Translation failed — tap to retry
-        </button>
-      ) : null /* fail-open: source-only, no translation for this segment */}
-    </div>
-  );
+        </div>
+      </button>
+    );
+  }
+
+  // Fail-open: source-only, no translation for this segment. Render nothing
+  // rather than an empty tile.
+  return null;
 });
 
 /**
@@ -121,8 +175,13 @@ const SplitTargetRow = memo(function SplitTargetRow({
  * {@link LiveTranscript}, but with each language in its own independently
  * scrolling pane instead of paired cards.
  *
+ * Liquid glass: each half is a floating frosted panel (the app's canonical
+ * glass material, `.glass-panel`) over a faint ambient wash, and every
+ * transcript line is a glass tile inside it. The language label is a sticky
+ * frosted bar that the tiles slide under and refract through.
+ *
  * Responsive: stacks top (source) / bottom (target) on a phone, becomes
- * left / right columns on a tablet or wider screen (`md:`). Both panes pin to
+ * left / right panels on a tablet or wider screen (`md:`). Both panes pin to
  * the newest line (sticky-bottom); a "↓ latest" pill appears if the user
  * scrolls up. Drop-in: identical props to LiveTranscript, so the shell can
  * swap between the two with no other change.
@@ -178,25 +237,36 @@ export function SplitTranscript({
   const showEmpty = visibleSegments.length === 0 && !interimText;
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden">
+    <div className="flex-1 min-h-0 relative flex flex-col md:flex-row gap-3 p-3 overflow-hidden">
+      {/* Ambient wash. Glass only reads as glass when there is something
+          behind it to refract — the same reason the sheets keep their scrim
+          light instead of pre-blurring the page. Static and very faint:
+          depth, not a light show. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(45% 55% at 22% 18%, rgba(59,130,246,0.10), transparent 70%)," +
+            "radial-gradient(45% 55% at 78% 82%, rgba(46,204,113,0.10), transparent 70%)",
+        }}
+      />
+
       {/* ── SOURCE half ── */}
-      <section
-        className="flex-1 min-h-0 flex flex-col relative overflow-hidden border-b md:border-b-0 md:border-r"
-        style={{ borderColor: COLORS.border }}
-      >
+      <section className="glass-panel relative flex-1 min-h-0 flex flex-col overflow-hidden rounded-[24px]">
         <PaneLabel name={getLangName(sourceLang)} color={COLORS.t3} />
         <div
           ref={srcRef}
           onScroll={srcScroll}
           dir={sourceRtl ? "rtl" : "ltr"}
-          className="flex-1 overflow-auto px-4 pb-4 transcript-scroll"
+          className="flex-1 overflow-auto px-3 pt-[46px] pb-4 transcript-scroll"
           style={{ direction: sourceRtl ? "rtl" : "ltr" }}
         >
           {showEmpty && (
-            <div className="text-center py-10" style={{ color: COLORS.t4 }}>
+            <EmptyTile>
               <div className="text-sm">Listening…</div>
               <div className="text-xs mt-1">Speak or play audio nearby.</div>
-            </div>
+            </EmptyTile>
           )}
           {visibleSegments.map((seg) => {
             const merge = merges?.[seg.id];
@@ -213,8 +283,11 @@ export function SplitTranscript({
           })}
           {interimText && (
             <div
-              className="opacity-50"
-              style={{ textAlign: sourceRtl ? "right" : "left" }}
+              className={`${TILE} opacity-60`}
+              style={{
+                ...tile("rgba(59,130,246,0.06)", "rgba(59,130,246,0.16)"),
+                textAlign: sourceRtl ? "right" : "left",
+              }}
             >
               <div
                 style={{
@@ -233,19 +306,19 @@ export function SplitTranscript({
       </section>
 
       {/* ── TARGET half ── */}
-      <section className="flex-1 min-h-0 flex flex-col relative overflow-hidden">
+      <section className="glass-panel relative flex-1 min-h-0 flex flex-col overflow-hidden rounded-[24px]">
         <PaneLabel name={getLangName(targetLang ?? "en")} color={COLORS.accent} />
         <div
           ref={tgtRef}
           onScroll={tgtScroll}
           dir={targetRtl ? "rtl" : "ltr"}
-          className="flex-1 overflow-auto px-4 pb-4 transcript-scroll"
+          className="flex-1 overflow-auto px-3 pt-[46px] pb-4 transcript-scroll"
           style={{ direction: targetRtl ? "rtl" : "ltr" }}
         >
           {showEmpty && (
-            <div className="text-center py-10 text-xs" style={{ color: COLORS.t4 }}>
-              Translation appears here.
-            </div>
+            <EmptyTile>
+              <div className="text-xs">Translation appears here.</div>
+            </EmptyTile>
           )}
           {visibleSegments.map((seg) => {
             const merge = merges?.[seg.id];
@@ -271,14 +344,33 @@ export function SplitTranscript({
   );
 }
 
-/** Fixed, non-scrolling language label at the top of each pane. */
+/**
+ * Language label for a pane. Overlays the scroller (absolute, not a flex
+ * sibling) so the tiles pass UNDER its frosted bar and blur through it —
+ * see `.glass-panel-label` in globals.css. The scroller's `pt-[46px]` keeps
+ * the first tile clear of it.
+ */
 function PaneLabel({ name, color }: { name: string; color: string }) {
   return (
     <div
-      className="px-4 pt-3 pb-2 text-[10px] font-bold uppercase tracking-wider shrink-0"
-      style={{ color, borderBottom: `1px solid ${COLORS.border}` }}
+      className="glass-panel-label absolute top-0 inset-x-0 z-10 px-4 pt-3 pb-2 text-[10px] font-bold uppercase tracking-wider"
+      style={{ color }}
     >
       {name}
+    </div>
+  );
+}
+
+/** Empty-state copy, in the same glass material as the transcript tiles. */
+function EmptyTile({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex justify-center pt-10">
+      <div
+        className="glass-tile rounded-[18px] px-5 py-4 text-center"
+        style={tile("rgba(255,255,255,0.04)", "rgba(255,255,255,0.07)")}
+      >
+        <div style={{ color: COLORS.t4 }}>{children}</div>
+      </div>
     </div>
   );
 }

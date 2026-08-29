@@ -246,6 +246,69 @@ html {
   }
 }
 
+/* ── Split transcript: liquid glass (see split-transcript.tsx) ───────────
+   Two floating frosted panels, each holding a stack of glass tiles. Same
+   material values as the language-picker / positioning-tips sheets and the
+   bottom nav, so every glass surface in the app still matches.
+
+   Base + :hover live here (not inline) so the hover outline-glow actually
+   applies — an inline style would win over a stylesheet :hover rule. Same
+   reason as .rec-ctl above.
+
+   Only the two PANELS and their two sticky labels carry backdrop-filter.
+   The tiles deliberately do NOT: nested inside an already-frosted panel, a
+   per-tile blur mostly re-samples the panel's own frosted output (almost no
+   visual gain) while costing one GPU layer per row — and a 40-minute
+   lecture is 200+ rows. Same layer-accumulation trap the will-change note
+   in animate-in.tsx warns about. */
+.glass-panel {
+  background: rgba(20, 28, 46, 0.6);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid var(--color-border-light);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.25);
+}
+
+/* The language label overlays the scroller (rather than sitting above it) so
+   tiles genuinely refract as they slide under it — the one real "liquid"
+   moment in this view. The scroller carries matching top padding. */
+.glass-panel-label {
+  background: rgba(20, 28, 46, 0.55);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border-bottom: 1px solid var(--color-border-faint);
+}
+
+/* One transcript line. --tile-tint / --tile-rim are set inline per variant
+   (speaker-tinted source, accent translation, amber retry, blue interim). */
+.glass-tile {
+  --tile-tint: rgba(255, 255, 255, 0.05);
+  --tile-rim: rgba(255, 255, 255, 0.09);
+  background: var(--tile-tint);
+  border: 1px solid var(--tile-rim);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.22), 0 2px 10px rgba(0, 0, 0, 0.22);
+  transition: transform 220ms cubic-bezier(0.3, 0.9, 0.4, 1),
+    border-color 220ms ease, box-shadow 220ms ease, background-color 220ms ease;
+}
+/* House convention: green outline-glow on hover. */
+.glass-tile:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.22), 0 10px 30px rgba(46, 204, 113, 0.16);
+}
+@media (prefers-reduced-motion: reduce) {
+  .glass-tile {
+    transition: none;
+  }
+  .glass-tile:hover {
+    transform: none;
+  }
+}
+
 /* Legal pages (terms/privacy): the inline links/emails are accent-green but
    had no hover — light them up on hover so they read as clickable. */
 .legal-article a {
