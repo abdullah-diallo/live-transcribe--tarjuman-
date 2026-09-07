@@ -12,7 +12,7 @@ import {
  *
  * Two modes, chosen by environment:
  *
- *   Dev (npm run dev): returns a single-use session token + a loopback WS URL
+ *   Dev (bun run dev): returns a single-use session token + a loopback WS URL
  *   pointing at our /api/deepgram-ws proxy (defined in server.js). The proxy
  *   authenticates with Deepgram server-side using the long-lived API key.
  *   This sidesteps networks where the browser can't reach wss://api.deepgram.com

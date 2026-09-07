@@ -31,7 +31,7 @@ const dev = process.env.NODE_ENV !== "production";
 const port = Number(process.env.PORT) || 3000;
 // Turbopack — the Next 16 default. A custom server has to opt in explicitly
 // (`next()` accepts turbopack/webpack bundler flags), and this file used to
-// pass `webpack: true`, which is why `npm run dev` booted slowly and printed
+// pass `webpack: true`, which is why `bun run dev` booted slowly and printed
 // none of the usual Next banner that bare `next dev` shows.
 const app = next({ dev, turbopack: true });
 const handle = app.getRequestHandler();
@@ -219,7 +219,7 @@ app.prepare().then(() => {
   server.listen(port, () => {
     // A custom server never prints Next's CLI banner — that comes from the
     // `next dev` binary, which we don't run. Print the equivalent ourselves so
-    // `npm run dev` reads like bare `next dev`, plus the one line only this
+    // `bun run dev` reads like bare `next dev`, plus the one line only this
     // server can claim: the Deepgram loopback proxy.
     const { version } = require("next/package.json");
     const lan = Object.values(os.networkInterfaces())

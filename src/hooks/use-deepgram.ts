@@ -634,7 +634,7 @@ export function useDeepgram({
           setError(
             isDirectDeepgram
               ? `Could not reach Deepgram (close code ${event.code}). The temp key may have been rejected — verify DEEPGRAM_API_KEY is set in the Vercel project env vars and that the master key has admin/keys:write scope at the Deepgram console.`
-              : `Could not reach the local Deepgram proxy (close code ${event.code}). Make sure the dev server was started with \`npm run dev\` (which uses server.js, not bare \`next dev\`). If the startup banner lists \`- Proxy: /api/deepgram-ws → Deepgram (loopback)\`, the proxy is up — in that case the problem is the proxy → Deepgram leg; check the server log for [deepgram-proxy] errors.`
+              : `Could not reach the local Deepgram proxy (close code ${event.code}). Make sure the dev server was started with \`bun run dev\` (which uses server.js, not bare \`next dev\`). If the startup banner lists \`- Proxy: /api/deepgram-ws → Deepgram (loopback)\`, the proxy is up — in that case the problem is the proxy → Deepgram leg; check the server log for [deepgram-proxy] errors.`
           );
           setConnectionState("error");
           return;

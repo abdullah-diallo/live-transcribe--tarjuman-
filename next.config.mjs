@@ -1,13 +1,17 @@
 // .mjs (not .ts) so the production runtime doesn't need TypeScript installed.
 // At build time Next.js parses this file directly via Node's ESM loader.
-import { withSentryConfig } from "@sentry/nextjs";
+// `/config` (not the package root) — importing withSentryConfig from the root
+// is deprecated in @sentry/nextjs v10 and stops working in v11. The root import
+// also printed a deprecation notice on every dev boot.
+import { withSentryConfig } from "@sentry/nextjs/config";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Pin the workspace root to THIS directory. Without it Next walks up looking
-  // for lockfiles, finds a stray ~/bun.lock alongside our package-lock.json,
-  // picks the home directory as the root, and warns on every dev boot. Pinning
-  // it also keeps prod file-tracing from reaching outside the project.
+  // for lockfiles, finds the stray ~/bun.lock in the home directory, picks that
+  // as the root, and warns on every dev boot — still true now that our own
+  // lockfile is also a bun.lock. Pinning it likewise keeps prod file-tracing
+  // from reaching outside the project.
   outputFileTracingRoot: import.meta.dirname,
   typescript: {
     // Fail the build on TS errors — don't silently let regressions through.

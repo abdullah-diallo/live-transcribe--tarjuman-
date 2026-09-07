@@ -31,11 +31,16 @@ fallback.
 
 ## How the build works
 
-Vercel runs `npm run build`, which is:
+Vercel runs `bun run build`, which is:
 
 ```bash
 convex deploy --cmd 'npx convex codegen && next build'
 ```
+
+`npx` — not `bunx` — is deliberate. `convex deploy --cmd` spawns that string
+in a subshell, and `npx` ships with the Node runtime Vercel always provides,
+so it resolves whether or not the bun binary is on the build PATH. Changing
+it buys nothing (one codegen call) and risks the production deploy.
 
 One command does both deploys: it pushes `convex/` functions to the
 **prod** Convex deployment, then runs the Next build with
@@ -58,8 +63,20 @@ This requires `CONVEX_DEPLOY_KEY` in Vercel's env (see below).
 
 Vercel dashboard → **Add New → Project** → import
 `abdullah-diallo/live-transcribe--tarjuman-`. Framework preset:
-Next.js. Build command: leave default (`npm run build`). No
+Next.js. Build command: leave default (`bun run build`). No
 `vercel.json` is needed.
+
+**Package manager.** Vercel picks it from the committed lockfile. This repo
+ships `bun.lock` and no `package-lock.json`, so Vercel installs with
+`bun install` — nothing to configure, but do not commit a second lockfile or
+the detection becomes ambiguous.
+
+`package.json` carries a `trustedDependencies` list because bun, unlike npm,
+blocks dependency install scripts by default. `@sentry/cli` (prod source-map
+upload), `esbuild` and `unrs-resolver` (native binaries for vitest/eslint)
+and `sharp` (Next's image optimizer) all need theirs. Without that list the
+install looks clean and then fails at build time — so if you add a dependency
+that ships a postinstall, add it there too.
 
 ### 2. Set environment variables
 
@@ -221,4 +238,10 @@ Logs.
 Convex prod env vars are listed in step 3 above. Local dev reads
 `.env.local` (same server keys, plus `CONVEX_DEPLOYMENT` /
 `NEXT_PUBLIC_CONVEX_URL` pointing at the dev deployment) and runs
-`npm run dev`, which starts `server.js` with the WebSocket proxy.
+`bun run dev`, which starts `server.js` with the WebSocket proxy.
+
+Note the split: **bun is the package manager and script runner, Node is still
+the runtime.** `dev` and `start` deliberately stay `node server.js` — Next's
+dev server and the `ws` proxy rely on Node internals that Bun's runtime does
+not fully implement, and the Convex CLI reads `process.versions.node` when it
+bundles `"use node"` actions. Use `bun install` / `bun run`, not `bun server.js`.

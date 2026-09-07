@@ -12,6 +12,13 @@
     "convex:dev": "convex dev",
     "convex:deploy": "convex deploy"
   },
+  "//trustedDependencies": "bun blocks dependency install scripts by default (npm runs them). These four NEED theirs: @sentry/cli downloads the binary that uploads prod source maps, esbuild and unrs-resolver link their native binaries (vitest and eslint fail without them), and sharp builds Next's image optimizer. Without this list bun installs a tree that looks fine and then breaks at test/lint/build time.",
+  "trustedDependencies": [
+    "@sentry/cli",
+    "esbuild",
+    "sharp",
+    "unrs-resolver"
+  ],
   "dependencies": {
     "@auth/core": "^0.37.4",
     "@convex-dev/auth": "^0.0.92",
