@@ -16,7 +16,7 @@ import { NextResponse, type NextRequest } from "next/server";
  */
 const CANONICAL = "tarjuman.live";
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const host = req.headers.get("host") ?? "";
   const bare = host.split(":")[0];
 

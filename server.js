@@ -19,12 +19,21 @@
 
 const { createServer } = require("node:http");
 const { parse } = require("node:url");
+const os = require("node:os");
 const next = require("next");
 const { WebSocket, WebSocketServer } = require("ws");
 
+// Captured before anything expensive happens so the "Ready in Xms" line at the
+// bottom measures the real boot, the same thing `next dev` reports.
+const bootStartedAt = Date.now();
+
 const dev = process.env.NODE_ENV !== "production";
 const port = Number(process.env.PORT) || 3000;
-const app = next({ dev, webpack: true });
+// Turbopack — the Next 16 default. A custom server has to opt in explicitly
+// (`next()` accepts turbopack/webpack bundler flags), and this file used to
+// pass `webpack: true`, which is why `npm run dev` booted slowly and printed
+// none of the usual Next banner that bare `next dev` shows.
+const app = next({ dev, turbopack: true });
 const handle = app.getRequestHandler();
 
 // Initialize the shared sessions map. Other modules (the route handler) read
@@ -208,8 +217,19 @@ app.prepare().then(() => {
   });
 
   server.listen(port, () => {
-    console.log(
-      `> Ready on http://localhost:${port} (with /api/deepgram-ws proxy)`
-    );
+    // A custom server never prints Next's CLI banner — that comes from the
+    // `next dev` binary, which we don't run. Print the equivalent ourselves so
+    // `npm run dev` reads like bare `next dev`, plus the one line only this
+    // server can claim: the Deepgram loopback proxy.
+    const { version } = require("next/package.json");
+    const lan = Object.values(os.networkInterfaces())
+      .flat()
+      .find((i) => i && i.family === "IPv4" && !i.internal);
+
+    console.log(`\n   ▲ Next.js ${version} (Turbopack)`);
+    console.log(`   - Local:        http://localhost:${port}`);
+    if (lan) console.log(`   - Network:      http://${lan.address}:${port}`);
+    console.log(`   - Proxy:        /api/deepgram-ws → Deepgram (loopback)`);
+    console.log(`\n   ✓ Ready in ${Date.now() - bootStartedAt}ms\n`);
   });
 });

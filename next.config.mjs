@@ -4,6 +4,11 @@ import { withSentryConfig } from "@sentry/nextjs";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Pin the workspace root to THIS directory. Without it Next walks up looking
+  // for lockfiles, finds a stray ~/bun.lock alongside our package-lock.json,
+  // picks the home directory as the root, and warns on every dev boot. Pinning
+  // it also keeps prod file-tracing from reaching outside the project.
+  outputFileTracingRoot: import.meta.dirname,
   typescript: {
     // Fail the build on TS errors — don't silently let regressions through.
     ignoreBuildErrors: false,
