@@ -424,6 +424,9 @@ export function TryLive() {
       <div
         ref={scrollRef}
         className="px-5 py-4 overflow-auto transcript-scroll flex flex-col gap-3"
+        // Lenis runs on this page and preventDefaults window wheel. Without
+        // this the wheel over the trial transcript would scroll the PAGE.
+        data-lenis-prevent
         style={{ height: 320 }}
       >
         {segs.length === 0 && status !== "listening" && (

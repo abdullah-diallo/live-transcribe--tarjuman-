@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useAutoAnimate } from "@formkit/auto-animate/react";
 import { useAuthToken } from "@convex-dev/auth/react";
 import { COLORS } from "@/lib/constants";
 import { isRtl, getLangName } from "@/lib/utils";
@@ -203,6 +204,12 @@ function AskLecture({
   const [messages, setMessages] = useState<{ q: string; a: string; error?: boolean }[]>([]);
   const [input, setInput] = useState("");
   const [asking, setAsking] = useState(false);
+  // Each Q&A pair appends to the list; glide it in rather than snapping the
+  // panel taller.
+  const [askListRef] = useAutoAnimate<HTMLDivElement>({
+    duration: 220,
+    easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+  });
   // Cancel the in-flight answer stream if the user leaves the tab (unmount).
   const abortRef = useRef<AbortController | null>(null);
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -256,7 +263,7 @@ function AskLecture({
           Ask anything about this lecture — answers come only from the transcript.
         </p>
       )}
-      <div className="flex flex-col gap-3 mb-3">
+      <div ref={askListRef} className="flex flex-col gap-3 mb-3">
         {messages.map((m, i) => (
           <div key={i}>
             <div

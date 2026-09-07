@@ -1,10 +1,11 @@
-import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
 import { LANGUAGES, type LanguageCode } from "./constants";
 
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
+// Single source of truth for class merging. `cn` is shadcn's own zero-dependency
+// package (a compiled drop-in for `twMerge(clsx(...))`), and it is what the
+// generated components under src/components/ui/ import directly — re-exporting
+// it here keeps ONE implementation in the codebase while leaving the long-standing
+// `@/lib/utils` import path working.
+export { cn } from "cn";
 
 export function formatDuration(sec: number): string {
   const m = Math.floor(sec / 60);

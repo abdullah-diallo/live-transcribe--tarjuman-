@@ -1,6 +1,7 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
+import { DotLottiePlayer } from "@/components/shared/dotlottie-player";
 import { COLORS } from "@/lib/constants";
 import { Icon } from "@/components/shared/icon";
 import { PLAN_META, type Plan } from "../../../convex/billingLimits";
@@ -55,7 +56,15 @@ export function UpgradeCelebration({
                 boxShadow: `0 0 28px ${COLORS.accent}30`,
               }}
             >
-              <Icon name="sparkle" size={22} color={COLORS.accent} />
+              {/* A one-shot celebration burst if the .lottie asset exists,
+                  otherwise the static sparkle. See dotlottie-player.tsx — it
+                  fetches nothing when the asset is absent or motion is
+                  reduced, so this costs zero today. */}
+              <DotLottiePlayer
+                src="/animations/upgrade-burst.lottie"
+                className="grid h-full w-full place-items-center"
+                fallback={<Icon name="sparkle" size={22} color={COLORS.accent} />}
+              />
             </div>
             <Dialog.Title
               className="text-lg font-bold mb-1"

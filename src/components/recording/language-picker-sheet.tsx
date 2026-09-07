@@ -1,6 +1,12 @@
 "use client";
 
-import * as Dialog from "@radix-ui/react-dialog";
+import { useAutoAnimate } from "@formkit/auto-animate/react";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerTitle,
+} from "@/components/ui/drawer";
 import { useEffect, useRef, useState } from "react";
 import { LANGUAGES } from "@/lib/constants";
 import { COLORS } from "@/lib/constants";
@@ -30,17 +36,32 @@ export function LanguagePickerSheet({
   onSelect,
 }: LanguagePickerSheetProps) {
   const [query, setQuery] = useState("");
+  // The list is filtered as you type; glide the rows instead of snapping.
+  const [listRef] = useAutoAnimate<HTMLDivElement>({
+    duration: 200,
+    easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+  });
   const inputRef = useRef<HTMLInputElement>(null);
 
   // When the sheet opens, clear stale search text and focus the input
   // after the open animation. Deferring the setQuery into the same timeout
   // as the focus avoids the cascading-render that comes from setting state
   // synchronously in an effect body.
+  //
+  // AUTOFOCUS IS DESKTOP-ONLY. As a bottom drawer, focusing the input on a
+  // phone raises the software keyboard, and vaul's `repositionInputs` then
+  // translates the whole sheet up to clear it — which on a ~300px iOS keyboard
+  // collapses the language list to nothing. There are only ~30 languages; on a
+  // phone people scroll, they don't type. Skipping the focus on touch sidesteps
+  // that entire class of problem rather than fighting it with heights.
   useEffect(() => {
     if (!open) return;
+    const coarse =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(hover: none)").matches;
     const t = setTimeout(() => {
       setQuery("");
-      inputRef.current?.focus();
+      if (!coarse) inputRef.current?.focus();
     }, 150);
     return () => clearTimeout(t);
   }, [open]);
@@ -57,60 +78,38 @@ export function LanguagePickerSheet({
     : LANGUAGES;
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay
-          className="fixed inset-0 z-[200] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0"
-          style={{
-            // Light dim only — leave the heavy blur to the sheet so the
-            // sheet's backdrop-filter has interesting content to refract.
-            background: "rgba(6, 11, 24, 0.4)",
-          }}
-        />
-        <Dialog.Content
-          className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[201] w-[calc(100%-32px)] max-w-[420px] max-h-[80dvh] flex flex-col pt-6 outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 duration-150"
-          style={{
-            // Liquid glass: translucent tint over a heavy frosted backdrop.
-            background: "rgba(20, 28, 46, 0.6)",
-            backdropFilter: "blur(28px) saturate(180%)",
-            WebkitBackdropFilter: "blur(28px) saturate(180%)",
-            borderRadius: 24,
-            // Longhand border (not the `border` shorthand) so React never warns
-            // about a shorthand/longhand conflict when Fast Refresh reconciles
-            // against the old bottom-sheet style that set borderBottom.
-            borderWidth: 1,
-            borderStyle: "solid",
-            borderColor: "rgba(255, 255, 255, 0.1)",
-            // Centered-dialog shadow with inset catch-lights, matching
-            // prompt-dialog / confirm-dialog.
-            boxShadow:
-              "0 24px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 -1px 0 rgba(0, 0, 0, 0.25)",
-            paddingBottom: 12,
-          }}
-        >
+    // A bottom DRAWER rather than a centered dialog: drag-to-dismiss with
+    // velocity is the right gesture for a long list opened one-handed, and it
+    // is the gesture people already expect from a sheet. Vaul wraps Radix's
+    // Dialog primitives, so the focus trap, aria-modal, Esc and onOpenChange
+    // contract are unchanged. Overlay + glass material live in ui/drawer.tsx.
+    <Drawer open={open} onOpenChange={onOpenChange}>
+      <DrawerContent className="pt-2 pb-3 outline-none">
           {/* Header */}
           <div
-            className="px-6 pb-4"
+            className="px-6 pt-3 pb-4"
             style={{ borderBottom: `1px solid ${COLORS.border}` }}
           >
-            <Dialog.Title
+            <DrawerTitle
               className="text-base font-bold"
               style={{ color: COLORS.w }}
             >
               {type === "source" ? "Source Language" : "Target Language"}
-            </Dialog.Title>
-            <Dialog.Description
+            </DrawerTitle>
+            <DrawerDescription
               className="text-[13px] mt-0.5"
               style={{ color: COLORS.t3 }}
             >
               {type === "source"
                 ? "Language being spoken"
                 : "Language you want to read"}
-            </Dialog.Description>
+            </DrawerDescription>
           </div>
 
           {/* Search bar */}
-          <div className="px-3 pt-3 pb-2">
+          {/* data-vaul-no-drag: a fumbled swipe starting on the input must
+              not begin a dismiss drag. */}
+          <div className="px-3 pt-3 pb-2" data-vaul-no-drag>
             <div
               className="flex items-center gap-2 px-3 py-2 rounded-[10px]"
               style={{
@@ -147,7 +146,7 @@ export function LanguagePickerSheet({
           </div>
 
           {/* Scrollable language list */}
-          <div className="flex-1 overflow-auto p-2 px-3">
+          <div ref={listRef} className="flex-1 overflow-auto p-2 px-3">
             {filtered.length === 0 ? (
               <div
                 className="text-center py-8 text-sm"
@@ -211,8 +210,7 @@ export function LanguagePickerSheet({
               })
             )}
           </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+      </DrawerContent>
+    </Drawer>
   );
 }

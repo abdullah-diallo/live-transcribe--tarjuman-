@@ -1,4 +1,5 @@
 import { Reveal } from "./reveal";
+import { HeadingReveal } from "./heading-reveal";
 import { AutoHoverGrid } from "./auto-hover-grid";
 import { T } from "./t";
 import type { MessageKey } from "@/lib/i18n/messages";
@@ -14,11 +15,11 @@ export function UseCases() {
   return (
     <section id="use-cases" className="w-full">
       <div className="max-w-5xl mx-auto px-6 py-16 sm:py-24">
-        <Reveal>
+        <HeadingReveal>
           <h2 className="text-2xl sm:text-3xl font-bold text-center leading-tight">
             <T k="lp.useCasesHeading" />
           </h2>
-        </Reveal>
+        </HeadingReveal>
         <AutoHoverGrid className="mt-12 grid gap-x-8 gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
           {USE_CASES.map(({ titleKey, bodyKey }, i) => (
             <Reveal key={titleKey} delay={60 + i * 80} className="h-full">

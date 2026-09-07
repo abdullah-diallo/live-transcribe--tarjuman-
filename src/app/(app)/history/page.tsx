@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useAutoAnimate } from "@formkit/auto-animate/react";
 import { COLORS } from "@/lib/constants";
 import { getLangName } from "@/lib/utils";
 import { Icon } from "@/components/shared/icon";
@@ -10,6 +11,13 @@ import { useAllSessions } from "@/hooks/use-sessions";
 import { useLocale } from "@/lib/i18n/locale-context";
 
 export default function HistoryPage() {
+  // Search-as-you-type filters this list; without this the rows popped in and
+  // out with no animation. auto-animate FLIPs the add/remove/reorder for free
+  // and respects prefers-reduced-motion by default.
+  const [listRef] = useAutoAnimate<HTMLDivElement>({
+    duration: 220,
+    easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+  });
   const sessions = useAllSessions();
   const { t } = useLocale();
   const [query, setQuery] = useState("");
@@ -131,7 +139,7 @@ export default function HistoryPage() {
       )}
 
       {filtered !== undefined && filtered.length > 0 && (
-        <div className="flex-1 overflow-auto px-5 py-4">
+        <div ref={listRef} className="flex-1 overflow-auto px-5 py-4">
           {filtered.map((s) => (
             <SessionCard key={s._id} session={s} />
           ))}

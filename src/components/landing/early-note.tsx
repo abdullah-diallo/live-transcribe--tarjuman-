@@ -1,4 +1,5 @@
 import { Reveal } from "./reveal";
+import { HeadingReveal } from "./heading-reveal";
 import { TryItFree } from "./try-it-free";
 import { T } from "./t";
 
@@ -14,11 +15,11 @@ import { T } from "./t";
 export function EarlyNote() {
   return (
     <section className="w-full max-w-5xl mx-auto px-6 py-16 sm:py-24">
-      <Reveal>
+      <HeadingReveal>
         <h2 className="text-2xl sm:text-3xl font-bold text-center leading-tight">
           <T k="lp.earlyHeading" />
         </h2>
-      </Reveal>
+      </HeadingReveal>
 
       <Reveal delay={90}>
         <div className="mt-10 mx-auto max-w-2xl rounded-2xl border border-[var(--color-border-light)] bg-[var(--color-surface)] p-8 sm:p-10 text-center transition duration-200 hover:-translate-y-1 hover:border-[var(--color-accent)] hover:bg-[var(--color-surface-light)] hover:shadow-[0_10px_30px_rgba(46,204,113,0.18)]">

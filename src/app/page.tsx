@@ -13,6 +13,10 @@ import { Reveal } from "@/components/landing/reveal";
 import { T } from "@/components/landing/t";
 import { JsonLd } from "@/components/seo/json-ld";
 import { LocaleProvider } from "@/lib/i18n/locale-context";
+import { MotionProvider } from "@/components/providers/motion-provider";
+import { SmoothScroll } from "@/components/landing/smooth-scroll";
+import { HeroParallax } from "@/components/landing/hero-parallax";
+import { HeroGlow } from "@/components/landing/hero-glow";
 import { SHOW_PRICING } from "@/lib/constants";
 
 // Hero left-column items center on mobile, left-align from lg up (beside the
@@ -25,20 +29,22 @@ export default function Home() {
       {/* applyDir=false: only nav/hero/headings are translated, so we don't
           flip the whole marketing layout RTL (the English bodies stay LTR). */}
       <LocaleProvider applyDir={false}>
+      <MotionProvider>
       <JsonLd />
+      <SmoothScroll />
       <MarketingNav />
 
       {/* Hero — pitch + CTA beside the live demo on desktop; stacked on mobile.
           Extra top padding clears the floating island nav. */}
       <section className="relative overflow-hidden px-6 pt-24 pb-16 sm:pt-28 sm:pb-24">
-        <div
-          aria-hidden
-          className="hero-glow pointer-events-none absolute left-1/2 top-1/3 -z-10 h-[640px] w-[640px] -translate-x-1/2 -translate-y-1/2 rounded-full"
-          style={{
-            background:
-              "radial-gradient(circle, rgba(46,204,113,0.16), rgba(46,204,113,0) 70%)",
-          }}
-        />
+        {/* HeroGlow renders the CSS glow always, and swaps in a small WebGL
+            quad on desktop only (see hero-glow.tsx). HeroParallax adds a
+            scroll-scrubbed parallax over whichever one is showing — it wraps
+            rather than targets, because .hero-glow's CSS keyframe already owns
+            that element's transform. */}
+        <HeroParallax>
+          <HeroGlow />
+        </HeroParallax>
 
         <div className="mx-auto max-w-6xl grid lg:grid-cols-2 items-center gap-14 lg:gap-10 lg:min-h-[78vh]">
           {/* Left — the pitch */}
@@ -126,6 +132,7 @@ export default function Home() {
       <EarlyNote />
       <Faq />
       <Footer />
+      </MotionProvider>
       </LocaleProvider>
     </main>
   );

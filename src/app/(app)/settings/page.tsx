@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, type ChangeEvent } from "react";
+import { useAutoAnimate } from "@formkit/auto-animate/react";
 import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
@@ -37,6 +38,13 @@ export default function SettingsPage() {
   const plan = usePlan();
   const { signOut } = useAuthActions();
   const router = useRouter();
+  // This block swaps between Loading / Pro / Upgrade as the subscription query
+  // resolves, and the usage line appears and disappears underneath it — all of
+  // which changed the section's height instantly. Glide it instead.
+  const [billingRef] = useAutoAnimate<HTMLDivElement>({
+    duration: 220,
+    easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+  });
 
   const [nameOpen, setNameOpen] = useState(false);
 
@@ -324,7 +332,7 @@ export default function SettingsPage() {
           "Free · all unlocked" card is just noise, so the whole section is
           hidden until billing launches. */}
       {(BILLING_ENABLED || SHOW_PRICING) && (
-      <div className="px-5 pt-6">
+      <div ref={billingRef} className="px-5 pt-6">
         <div className={sectionLabel}>{t("settings.subscription")}</div>
         {subscription === undefined ? (
           <div

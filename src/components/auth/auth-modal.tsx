@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { useLenis } from "lenis/react";
 import { AuthForm } from "./auth-form";
 
 interface AuthModalProps {
@@ -23,9 +24,27 @@ export function AuthModal({
   initialMode = "signUp",
 }: AuthModalProps) {
   const [mode, setMode] = useState<"signIn" | "signUp">(initialMode);
+  // Undefined outside the marketing page (useLenis has a fallback context), so
+  // this is a no-op in the app shell.
+  const lenis = useLenis();
+
+  // This modal opens over the LANDING page, where Lenis is active. Radix's
+  // react-remove-scroll and Lenis both attach non-passive wheel handlers, and
+  // which one wins would come down to listener registration order — so rather
+  // than reason about that, park Lenis entirely while the modal is open. The
+  // `data-lenis-prevent` on the content below covers the same ground from the
+  // other direction (wheel inside the scrollable form).
+  const handleOpenChange = useCallback(
+    (next: boolean) => {
+      if (next) lenis?.stop();
+      else lenis?.start();
+      onOpenChange(next);
+    },
+    [lenis, onOpenChange]
+  );
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog.Root open={open} onOpenChange={handleOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay
           className="fixed inset-0 z-[200] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0"
@@ -38,6 +57,7 @@ export function AuthModal({
         />
         <Dialog.Content
           aria-describedby={undefined}
+          data-lenis-prevent
           className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[201] w-[calc(100%-32px)] max-w-[420px] max-h-[90dvh] overflow-auto outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 duration-150"
           style={{
             // Liquid glass: translucent tint over a heavy frosted backdrop.

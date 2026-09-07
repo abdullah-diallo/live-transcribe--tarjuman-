@@ -138,6 +138,9 @@ export function LocaleSwitcher({
       {visible && (
         <div
           role="listbox"
+          // Lenis (marketing page) preventDefaults window wheel — without this
+          // the wheel over this 31-item list would scroll the page behind it.
+          data-lenis-prevent
           className={`absolute z-50 max-h-[60vh] overflow-auto min-w-[240px] rounded-xl py-1 duration-200 ${
             dropUp ? "start-0 bottom-full mb-1.5" : "end-0 mt-1.5"
           } ${

@@ -1,5 +1,6 @@
 import { Languages, BookOpen, Waves, Sparkles } from "lucide-react";
 import { Reveal } from "./reveal";
+import { HeadingReveal } from "./heading-reveal";
 import { AutoHoverGrid } from "./auto-hover-grid";
 import { T } from "./t";
 import type { MessageKey } from "@/lib/i18n/messages";
@@ -18,10 +19,12 @@ const FEATURES: {
 export function Features() {
   return (
     <section id="features" className="w-full max-w-5xl mx-auto px-6 py-16 sm:py-24">
-      <Reveal>
+      <HeadingReveal>
         <h2 className="text-2xl sm:text-3xl font-bold text-center max-w-2xl mx-auto leading-tight">
           <T k="lp.featuresHeading" />
         </h2>
+      </HeadingReveal>
+      <Reveal delay={120}>
         <p
           dir="auto"
           className="mt-3 text-center text-[var(--color-text-2)] max-w-xl mx-auto"

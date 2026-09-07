@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerTitle,
+} from "@/components/ui/drawer";
 import { COLORS } from "@/lib/constants";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { Icon } from "@/components/shared/icon";
@@ -56,32 +61,14 @@ export function PositioningTips({
   };
 
   return (
-    <Dialog.Root open={open} onOpenChange={handleClose}>
-      <Dialog.Portal>
-        <Dialog.Overlay
-          className="fixed inset-0 z-[200] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0"
-          style={{
-            // Light dim only — leave the heavy blur to the sheet so the
-            // sheet's backdrop-filter has interesting content to refract.
-            background: "rgba(6, 11, 24, 0.4)",
-          }}
-        />
-        <Dialog.Content
-          className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[201] w-[calc(100%-32px)] max-w-[440px] max-h-[85vh] overflow-auto outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 duration-200 ease-out"
-          style={{
-            // Liquid glass: translucent tint over a heavy frosted backdrop.
-            background: "rgba(20, 28, 46, 0.6)",
-            backdropFilter: "blur(28px) saturate(180%)",
-            WebkitBackdropFilter: "blur(28px) saturate(180%)",
-            borderRadius: 24,
-            border: "1px solid rgba(255, 255, 255, 0.1)",
-            // Centered bubble: all-around drop shadow with top catch-light and
-            // bottom shade for glass depth (matches PromptDialog/ConfirmDialog).
-            boxShadow:
-              "0 24px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 -1px 0 rgba(0, 0, 0, 0.25)",
-          }}
-        >
-          <div className="p-6">
+    // A bottom DRAWER rather than a centered dialog: this is read-and-dismiss
+    // onboarding with no inputs and no destructive action, so swipe-to-dismiss
+    // is exactly the right gesture. Vaul wraps Radix's Dialog primitives, so
+    // focus trap / aria-modal / Esc / onOpenChange are unchanged. Overlay and
+    // the glass material live in ui/drawer.tsx.
+    <Drawer open={open} onOpenChange={handleClose}>
+      <DrawerContent className="overflow-auto pb-2 outline-none">
+          <div className="px-6 pt-4 pb-6">
             <div
               className="w-12 h-12 rounded-2xl grid place-items-center mb-4"
               style={{
@@ -91,19 +78,19 @@ export function PositioningTips({
             >
               <Icon name="mic" size={22} color={COLORS.accent} />
             </div>
-            <Dialog.Title
+            <DrawerTitle
               className="text-lg font-bold mb-1"
               style={{ color: COLORS.w }}
             >
               {t("record.tipsTitle")}
-            </Dialog.Title>
-            <Dialog.Description
+            </DrawerTitle>
+            <DrawerDescription
               className="text-[13px] leading-relaxed mb-4"
               style={{ color: COLORS.t3 }}
             >
               Tarjuman captures audio from speakers in halls and masjids
               — a few seconds of setup makes a big difference.
-            </Dialog.Description>
+            </DrawerDescription>
 
             <ul className="flex flex-col gap-3 mb-5">
               {TIPS.map((tip) => (
@@ -170,9 +157,8 @@ export function PositioningTips({
               {t("record.gotIt")}
             </button>
           </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+      </DrawerContent>
+    </Drawer>
   );
 }
 

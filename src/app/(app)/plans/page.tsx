@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import useEmblaCarousel from "embla-carousel-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -35,6 +36,44 @@ export default function PlansPage() {
   const currentPlan: Plan = plan?.plan ?? "free";
 
   const [annual, setAnnual] = useState(false);
+
+  // The doc comment above has always described a swipeable carousel; the
+  // markup had regressed to a plain stack. Embla restores it — and note it is
+  // TRANSFORM-based, so it never creates a horizontal scroll container and
+  // cannot interact with the `body { overflow-x: clip }` that keeps the
+  // desktop sidebar's `position: sticky` working.
+  //
+  // `active: false` above md removes Embla's transform entirely, so the same
+  // markup collapses back to the plain desktop flex row with no second layout.
+  const reduce =
+    typeof window !== "undefined" &&
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  const [emblaRef, emblaApi] = useEmblaCarousel({
+    align: "center",
+    containScroll: "trimSnaps",
+    duration: reduce ? 0 : 25,
+    breakpoints: { "(min-width: 768px)": { active: false } },
+  });
+  const [selected, setSelected] = useState(0);
+
+  useEffect(() => {
+    if (!emblaApi) return;
+    const sync = () => setSelected(emblaApi.selectedScrollSnap());
+    sync();
+    emblaApi.on("select", sync);
+    // reInit fires when the annual toggle changes card heights — without this
+    // the dots would drift out of sync with the actual slide.
+    emblaApi.on("reInit", sync);
+    return () => {
+      emblaApi.off("select", sync);
+      emblaApi.off("reInit", sync);
+    };
+  }, [emblaApi]);
+
+  const scrollTo = useCallback(
+    (i: number) => emblaApi?.scrollTo(i),
+    [emblaApi]
+  );
 
   // Open the on-domain DARK embedded checkout (only Pro is purchasable today).
   const openCheckout = () =>
@@ -104,8 +143,17 @@ export default function PlansPage() {
       </div>
       )}
 
-      {/* Cards — stacked on mobile, side-by-side grid on desktop */}
-      <div className="flex flex-col md:flex-row md:items-stretch gap-3 px-5 py-4">
+      {/* Cards — a swipeable carousel on mobile, a plain row on desktop.
+          The viewport clips horizontally but keeps generous vertical PADDING
+          rather than `overflow-y-visible`: per spec a non-`visible` overflow on
+          one axis forces `auto` on the other, which would create a nested
+          vertical scroller. The padding is what stops the cards' hover lift and
+          the Pro glow ring from being clipped. */}
+      <div
+        ref={emblaRef}
+        className="overflow-hidden md:overflow-visible px-5 py-4"
+      >
+      <div className="flex md:items-stretch gap-3">
         {ORDER.map((tier) => {
           const meta = PLAN_META[tier];
           const isFree = tier === "free";
@@ -116,7 +164,7 @@ export default function PlansPage() {
           return (
             <div
               key={tier}
-              className="w-full md:flex-1 md:min-w-0 rounded-2xl px-4 py-4 flex flex-col transition-[transform,box-shadow] duration-300 ease-out hover:-translate-y-1 hover:shadow-2xl"
+              className="flex-[0_0_86%] md:flex-1 md:min-w-0 rounded-2xl px-4 py-4 flex flex-col transition-[transform,box-shadow] duration-300 ease-out hover:-translate-y-1 hover:shadow-2xl"
               style={{
                 background: COLORS.surface,
                 border: `1px solid ${popular ? `${COLORS.accent}66` : COLORS.border}`,
@@ -240,6 +288,26 @@ export default function PlansPage() {
             </div>
           );
         })}
+      </div>
+      </div>
+
+      {/* Position dots — mobile only, since above md Embla is inactive and all
+          three cards are visible at once. */}
+      <div className="flex md:hidden justify-center gap-2 pb-1">
+        {ORDER.map((tier, i) => (
+          <button
+            key={tier}
+            type="button"
+            onClick={() => scrollTo(i)}
+            aria-label={`Show ${PLAN_META[tier].name} plan`}
+            aria-current={selected === i}
+            className="h-2 rounded-full transition-all duration-300 ease-out cursor-pointer"
+            style={{
+              width: selected === i ? 18 : 8,
+              background: selected === i ? COLORS.accent : COLORS.border,
+            }}
+          />
+        ))}
       </div>
 
       <p className="text-[11px] text-center px-5" style={{ color: COLORS.t4 }}>

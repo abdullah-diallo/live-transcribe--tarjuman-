@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { m, useReducedMotion, type Variants } from "motion/react";
+import type { ReactNode } from "react";
 
 interface RevealProps {
   children: ReactNode;
@@ -14,6 +15,9 @@ interface RevealProps {
   fade?: boolean;
 }
 
+const SMOOTH = [0.22, 1, 0.36, 1] as const;
+const OVERSHOOT = [0.34, 1.4, 0.64, 1] as const; // slight "pop" on entrance
+
 /**
  * Reveals its children when they scroll into view (punchy rise + slight scale +
  * gentle overshoot) AND re-hides them when they scroll back out — so the
@@ -21,66 +25,56 @@ interface RevealProps {
  * for above-the-fold content. Respects prefers-reduced-motion (shows instantly,
  * no toggling). Content is only opacity/transform-shifted — never removed from
  * the DOM — so it stays crawlable.
+ *
+ * Uses `m` (not `motion`) — the tree-shakeable component that needs a
+ * LazyMotion ancestor. See MotionProvider in src/components/providers. The full
+ * `motion` component is ~34kB gz and this wraps most of the LCP surface.
  */
 export function Reveal({ children, delay = 0, className, fade = true }: RevealProps) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [shown, setShown] = useState(false);
-  const [reduce, setReduce] = useState(false);
+  // Can be null before hydration — treat that as "no preference".
+  const reduce = useReducedMotion() ?? false;
 
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setReduce(true);
-      setShown(true);
-      return;
-    }
-    const io = new IntersectionObserver(
-      (entries) => {
-        // Two-way: shown while in view, hidden when scrolled back out, so the
-        // reveal reverses on scroll-up. Kept observing — not a one-shot.
-        setShown(entries[0]?.isIntersecting ?? false);
+  // The transition lives INSIDE each variant, not on the element. A shared
+  // `transition` prop would apply to both directions and we'd lose the
+  // asymmetry: entrance staggers and overshoots, exit is snappy with NO
+  // stagger delay so elements hide in step with scroll-up instead of lingering
+  // behind the entrance timing.
+  const variants: Variants = {
+    hidden: {
+      opacity: fade ? 0 : 1,
+      y: 28,
+      scale: 0.96,
+      transition: {
+        opacity: { duration: 0.28, ease: SMOOTH, delay: 0 },
+        default: { duration: 0.32, ease: SMOOTH, delay: 0 },
       },
-      { threshold: 0.12, rootMargin: "0px 0px -8% 0px" }
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
-
-  const smooth = "cubic-bezier(0.22, 1, 0.36, 1)";
-  const overshoot = "cubic-bezier(0.34, 1.4, 0.64, 1)"; // slight "pop" on entrance
-
-  // Entrance staggers (delay) and pops in; exit is immediate + snappy with NO
-  // stagger delay, so elements hide in step with scroll-up instead of lingering
-  // behind the entrance timing — keeps the reveal in sync with the scroll.
-  const transition = reduce
-    ? "none"
-    : shown
-      ? [
-          fade ? `opacity 600ms ${smooth} ${delay}ms` : null,
-          `transform 600ms ${overshoot} ${delay}ms`,
-        ]
-          .filter(Boolean)
-          .join(", ")
-      : [
-          fade ? `opacity 280ms ${smooth} 0ms` : null,
-          `transform 320ms ${smooth} 0ms`,
-        ]
-          .filter(Boolean)
-          .join(", ");
+    },
+    shown: {
+      opacity: 1,
+      y: 0,
+      scale: 1,
+      transition: {
+        opacity: { duration: 0.6, ease: SMOOTH, delay: delay / 1000 },
+        default: { duration: 0.6, ease: OVERSHOOT, delay: delay / 1000 },
+      },
+    },
+  };
 
   return (
-    <div
-      ref={ref}
+    <m.div
       className={className}
-      style={{
-        opacity: fade && !shown ? 0 : 1,
-        transform: shown ? "none" : "translateY(28px) scale(0.96)",
-        transition,
-        willChange: fade ? "opacity, transform" : "transform",
-      }}
+      variants={variants}
+      // Reduced motion: pin to `shown` and never observe. Relying on
+      // MotionConfig reducedMotion="user" alone is NOT enough — it would still
+      // toggle back to `hidden` on scroll-out and flicker the content.
+      initial={reduce ? "shown" : "hidden"}
+      {...(reduce ? {} : { whileInView: "shown" as const })}
+      // once:false keeps observing, so the reveal reverses on scroll-up.
+      // amount/margin map 1:1 onto the old threshold 0.12 / rootMargin.
+      viewport={{ once: false, amount: 0.12, margin: "0px 0px -8% 0px" }}
+      style={{ willChange: fade ? "opacity, transform" : "transform" }}
     >
       {children}
-    </div>
+    </m.div>
   );
 }

@@ -3,6 +3,14 @@
 import Link from "next/link";
 import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
+import {
+  m,
+  useSpring,
+  useVelocity,
+  useTransform,
+  useMotionValueEvent,
+  useReducedMotion,
+} from "motion/react";
 import { Icon, IconName } from "@/components/shared/icon";
 import { useNavVisibility } from "@/components/layout/nav-visibility";
 import { COLORS } from "@/lib/constants";
@@ -35,7 +43,9 @@ const TAB_WIDTH = 100;
 // the lens reads slightly larger than its slot, like iOS 26's selection
 // lozenge that nearly fills the bar's height.
 const LENS_INSET = 4;
-const FLIGHT_MS = 480;
+// Peak |velocity| a one-slot hop reaches, px/s. Normalises the swell so a
+// single-tab flight peaks at ~1.0 and a longer hop doesn't over-inflate.
+const PEAK_V = 420;
 
 export function BottomNav() {
   const pathname = usePathname();
@@ -46,71 +56,51 @@ export function BottomNav() {
     0
   );
   const lensRef = useRef<HTMLDivElement>(null);
-  const prevIndexRef = useRef(activeIndex);
-  // Live x captured by the previous flight's cleanup just before cancel —
-  // lets a rapid double-tap interrupt glide from wherever the lens actually
-  // is. null = no interrupt, start from the previous slot.
-  const liveXRef = useRef<number | null>(null);
+  const reduce = useReducedMotion() ?? false;
 
-  // Liquid-glass flight: when the active tab changes, the lens swells
-  // slightly into a bubble, glides to the new slot (icons it passes soften
-  // behind a plain backdrop blur via .nav-lens-flying), and settles back
-  // down. WAAPI owns ALL lens motion; the inline resting transform below is
-  // what non-animated renders (first paint, reduced motion, JS failure)
-  // display.
+  // Liquid-glass flight: when the active tab changes the lens swells slightly
+  // into a bubble, glides to the new slot (icons it passes soften behind a
+  // plain backdrop blur via .nav-lens-flying), and settles back down.
+  //
+  // THE SPRING IS THE SOURCE OF TRUTH for lens position — not the DOM. That
+  // single fact removes two hand-rolled hacks this file used to carry:
+  //   1. Interrupt-resume. `x.set(target)` on a spring retargets from the
+  //      current value AND the current velocity. The old code captured the
+  //      live x off a DOMMatrix in the effect cleanup, which recovered
+  //      position but threw velocity away — so a fast double-tap restarted
+  //      from a dead stop. A spring is continuous through the interrupt.
+  //   2. The "React already re-rendered, so computed style points at the
+  //      DESTINATION" teleport-then-bulge trap. There is no computed style to
+  //      misread now, so the trap can't happen.
+  // The spring also initialises AT the resting slot, so the very first render
+  // emits the correct transform — first paint / JS-failure correctness holds
+  // by construction rather than via a parallel inline-style code path.
+  const x = useSpring(activeIndex * TAB_WIDTH, {
+    visualDuration: 0.42,
+    bounce: 0.16, // restraint: reads as a settle, not a boing
+  });
+
   useEffect(() => {
-    const lens = lensRef.current;
-    const from = prevIndexRef.current;
-    prevIndexRef.current = activeIndex;
-    if (!lens || from === activeIndex) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const target = activeIndex * TAB_WIDTH;
+    // jump() sets without animating AND without generating velocity.
+    if (reduce) x.jump(target);
+    else x.set(target);
+  }, [activeIndex, reduce, x]);
 
-    // CAREFUL: by the time this effect runs, React has already re-rendered
-    // and the inline resting transform points at the NEW slot — reading
-    // computed style here would return the destination and the flight would
-    // teleport-then-bulge. Start from the previous slot instead, or from the
-    // live mid-flight position captured by the prior cleanup on interrupt.
-    const fromX = liveXRef.current ?? from * TAB_WIDTH;
-    liveXRef.current = null;
-    const toX = activeIndex * TAB_WIDTH;
+  // Velocity-derived swell: the lens inflates in proportion to how fast it is
+  // actually moving and deflates as it lands, instead of a fixed mid-flight
+  // keyframe. Peaks slightly past the capsule edge (the nav deliberately does
+  // NOT clip overflow); anything bigger reads cartoonish.
+  const speed = useVelocity(x);
+  const swell = useTransform(speed, (v) => Math.min(Math.abs(v) / PEAK_V, 1));
+  const scaleX = useTransform(swell, [0, 1], [1, 1.07]);
+  const scaleY = useTransform(swell, [0, 1], [1, 1.14]);
 
-    lens.classList.add("nav-lens-flying");
-    const anim = lens.animate(
-      [
-        { transform: `translateX(${fromX}px) scale(1, 1)` },
-        {
-          // Gentle swell at mid-flight — just enough to read as a bubble
-          // lifting off, slightly past the capsule edge (the nav
-          // deliberately does NOT clip overflow). Anything bigger reads
-          // cartoonish.
-          transform: `translateX(${(fromX + toX) / 2}px) scale(1.07, 1.14)`,
-          offset: 0.4,
-        },
-        {
-          transform: `translateX(${toX}px) scale(1.03, 1.06)`,
-          offset: 0.82,
-        },
-        { transform: `translateX(${toX}px) scale(1, 1)` },
-      ],
-      { duration: FLIGHT_MS, easing: "cubic-bezier(0.3, 0.9, 0.4, 1)" }
-    );
-    const land = () => lens.classList.remove("nav-lens-flying");
-    anim.onfinish = land;
-    return () => {
-      // If a flight is still in progress, capture its live position BEFORE
-      // cancel so the interrupting flight takes over seamlessly. When the
-      // flight already finished, computed style equals the (already
-      // re-rendered) NEW destination — capturing it would recreate the
-      // teleport bug, so only capture while running.
-      if (anim.playState === "running") {
-        liveXRef.current = new DOMMatrixReadOnly(
-          getComputedStyle(lens).transform
-        ).m41;
-      }
-      anim.cancel();
-      land();
-    };
-  }, [activeIndex]);
+  // Direct classList write, no React state — this fires per frame, so a
+  // setState here would re-render the whole nav 60x/sec during a flight.
+  useMotionValueEvent(speed, "change", (v) => {
+    lensRef.current?.classList.toggle("nav-lens-flying", Math.abs(v) > 8);
+  });
 
   return (
     <nav
@@ -150,7 +140,7 @@ export function BottomNav() {
           (.nav-lens-flying adds a plain backdrop blur — works everywhere);
           at rest it's a neutral smoked-glass lozenge — brand color stays on
           the active icon/label, not the glass. */}
-      <div
+      <m.div
         ref={lensRef}
         aria-hidden
         className="absolute z-20 pointer-events-none will-change-transform"
@@ -165,8 +155,10 @@ export function BottomNav() {
           background: "rgba(255, 255, 255, 0.08)",
           boxShadow:
             "inset 0 1px 0 rgba(255, 255, 255, 0.15), inset 0 -1px 1px rgba(0, 0, 0, 0.25), 0 2px 10px rgba(0, 0, 0, 0.25)",
-          // Resting position; WAAPI animates over this during flight.
-          transform: `translateX(${activeIndex * TAB_WIDTH}px)`,
+          // MotionValues write straight to transform every frame.
+          x,
+          scaleX,
+          scaleY,
         }}
       />
       {TABS.map((tab) => {

@@ -12,6 +12,7 @@ import { NavVisibilityProvider } from "@/components/layout/nav-visibility";
 import { Icon } from "@/components/shared/icon";
 import { COLORS, SHOW_PRICING } from "@/lib/constants";
 import { LocaleProvider } from "@/lib/i18n/locale-context";
+import { MotionProvider } from "@/components/providers/motion-provider";
 import { BILLING_ENABLED } from "../../../convex/billingLimits";
 
 /**
@@ -90,6 +91,11 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <LocaleProvider>
+      {/* domAnimation only — the bottom-nav lens uses MotionValues + a styled
+          m.div, which needs no feature bundle at all, so this is nearly free
+          here. Anything wanting layoutId must import plain `motion` locally
+          rather than widening this bundle for the whole app shell. */}
+      <MotionProvider>
       <NavVisibilityProvider>
         {/* Desktop (≥ lg): sidebar rail + flexible main column. Mobile: the
             main column stays a centered 420px phone layout, unchanged, and the
@@ -115,6 +121,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           </div>
         </div>
       </NavVisibilityProvider>
+      </MotionProvider>
     </LocaleProvider>
   );
 }

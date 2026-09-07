@@ -312,18 +312,24 @@ export function AuthForm({ mode, onSwitchMode }: AuthFormProps) {
 
         {/* Confirm password — always mounted, height-animated so the modal
             grows/shrinks smoothly on sign-up ↔ sign-in. The negative margin
-            reclaims the flex gap slot when collapsed (no empty gap). */}
+            reclaims the flex gap slot when collapsed (no empty gap).
+
+            Uses the grid-template-rows 0fr ↔ 1fr technique (same as
+            landing/faq-item.tsx) rather than a max-height. max-height needs a
+            magic number big enough for the tallest possible content — the old
+            160px would have clipped the moment a validation error line
+            rendered under the field. 1fr resolves to the content's natural
+            height, in both directions, with no measurement. */}
         <div
           aria-hidden={!isSignUp}
-          className="overflow-hidden"
+          className="grid transition-[grid-template-rows,opacity,margin-bottom] duration-300 ease-out motion-reduce:transition-none"
           style={{
-            maxHeight: isSignUp ? 160 : 0,
+            gridTemplateRows: isSignUp ? "1fr" : "0fr",
             opacity: isSignUp ? 1 : 0,
             marginBottom: isSignUp ? 0 : -12,
-            transition:
-              "max-height 320ms cubic-bezier(0.22,1,0.36,1), opacity 220ms ease, margin-bottom 320ms cubic-bezier(0.22,1,0.36,1)",
           }}
         >
+          <div className="overflow-hidden">
           <Field label="Confirm password" error={fieldErrors.confirmPassword}>
             <input
               type={showPassword ? "text" : "password"}
@@ -357,6 +363,7 @@ export function AuthForm({ mode, onSwitchMode }: AuthFormProps) {
               }}
             />
           </Field>
+          </div>
         </div>
 
         {topError && (
